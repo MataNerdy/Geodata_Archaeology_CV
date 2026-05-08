@@ -71,7 +71,6 @@ def extract_map_type_full(file_path: Path, region_name: str) -> str:
     stem = file_path.stem
     parts = stem.split("_")
 
-    # убираем ведущий числовой префикс вроде 01_, 02_, 03_
     if parts and parts[0].isdigit():
         parts = parts[1:]
 

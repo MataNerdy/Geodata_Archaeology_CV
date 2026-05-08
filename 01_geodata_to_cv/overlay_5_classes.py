@@ -351,19 +351,14 @@ def test_region_overlay(region_info, save_dir="overlay_5_classes_test"):
 
             gpd.GeoSeries([geom], crs=gdf_in_raster.crs).plot(
                 ax=ax,
-                facecolor="none",
+                facecolor=color,
+                alpha=0.15,
                 edgecolor=color,
-                linewidth=2,
+                linewidth=2.5
             )
 
-            c = geom.centroid
-            ax.text(
-                c.x,
-                c.y,
-                f"{row['class_id']}",
-                fontsize=7,
-                color="white",
-            )
+            # c = geom.centroid
+            # ax.text(c.x, c.y, f"{row['class_id']}", fontsize=7, color="white")
 
         fallback_note = " | fallback to raster CRS" if used_fallback else ""
         ax.set_title(
@@ -378,11 +373,31 @@ def test_region_overlay(region_info, save_dir="overlay_5_classes_test"):
 
         print("Saved:", out_path)
 
-
 if __name__ == "__main__":
     regions = find_regions(DATASET_ROOT)
 
     print(f"Found {len(regions)} regions")
 
-    for r in regions[:5]:
-        test_region_overlay(r)
+    TARGET_REGIONS = {
+        "042_ИЗБОРСК",
+        "027_ТИМЕРЕВО",
+        "005_ЛУБНО",
+        "024_УСТЬ-РЕКА",
+        "039_САРСКОЕ",
+        "012_ЛИХУША",
+    }
+
+    selected = [
+        r for r in regions
+        if r["region_dir"].name in TARGET_REGIONS
+    ]
+
+    print("\nSelected regions:")
+    for r in selected:
+        print("-", r["region_dir"].name)
+
+    for r in selected:
+        test_region_overlay(
+            r,
+            save_dir="overlay_5_classes_portfolio_examples"
+        )
