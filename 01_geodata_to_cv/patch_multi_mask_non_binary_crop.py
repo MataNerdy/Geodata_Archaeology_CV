@@ -90,7 +90,7 @@ def extract_adaptive_patch_and_multi_mask(
     # --- 3. считаем адаптивный размер crop ---
     crop_size = int(np.ceil(max(obj_w_px, obj_h_px) * context_scale))
     if crop_size > MAX_CROP_SIZE:
-        print(f"[LARGE CROP] crop_size={crop_size}")
+        print(f"[LARGE CROP] sample_idx={idx} crop_size={crop_size}")
     crop_size = max(min_crop_size, crop_size)
     crop_size = min(max_crop_size, crop_size)
 
@@ -166,32 +166,12 @@ def extract_adaptive_patch_and_multi_mask(
     if len(intersecting) == 0:
         raise ValueError("No polygons in adaptive patch")
 
-    items = []
-
+    shapes = []
     for _, r in intersecting.iterrows():
         value = CLASS_TO_ID.get(r["kurgan_type"], 0)
         if value == 0:
             continue
-
-        geom = r.geometry
-        if geom is None or geom.is_empty:
-            continue
-
-        items.append({
-            "geometry": geom,
-            "value": value,
-            "area": geom.area,
-            "kurgan_type": r["kurgan_type"],
-        })
-
-    # Большие объекты рисуем первыми, маленькие — последними.
-    # Так маленькие курганы не затираются большими поврежденными областями.
-    items = sorted(items, key=lambda x: x["area"], reverse=True)
-
-    shapes = [
-        (item["geometry"], item["value"])
-        for item in items
-    ]
+        shapes.append((r.geometry, value))
 
     if not shapes:
         raise ValueError("No valid labeled polygons")
@@ -265,8 +245,8 @@ for modality, find_fn in MODALITIES.items():
         all_gdf = gpd.GeoDataFrame(all_gdf, geometry="geometry", crs=target_crs)
 
         all_gdf = all_gdf[
+            all_gdf.geometry.notna() &
             (~all_gdf.geometry.is_empty) &
-            (all_gdf.geometry.notna()) &
             all_gdf.geometry.is_valid
         ]
 

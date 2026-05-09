@@ -177,27 +177,53 @@ def extract_adaptive_patch_and_multi_mask(
     if len(intersecting) == 0:
         raise ValueError("No polygons in adaptive patch")
 
-    shapes = []
-    class_names_in_patch = set()
+    items = []
 
     for _, r in intersecting.iterrows():
         class_name = r.get("class_name")
         value = CLASS_TO_ID.get(class_name, 0)
+
         if value == 0:
             continue
-        shapes.append((r.geometry, value))
-        class_names_in_patch.add(class_name)
 
-    if not shapes:
-        raise ValueError("No valid labeled polygons")
+        geom = r.geometry
 
-    mask = rasterize(
-        shapes,
-        out_shape=(crop_size, crop_size),
-        transform=transform,
-        fill=0,
-        dtype="uint8",
-    )
+        if geom is None or geom.is_empty:
+            continue
+
+        items.append({
+            "geometry": geom,
+            "value": value,
+            "class_name": class_name,
+            "area": geom.area,
+        })
+
+    # ==========================================================
+    # IMPORTANT:
+    # Large polygons are rasterized first,
+    # small polygons are rasterized last.
+    # This preserves nested structures.
+    # ==========================================================
+
+    items = sorted(items, key=lambda x: x["area"], reverse=True)
+
+    shapes = []
+    class_names_in_patch = set()
+
+    for item in items:
+        shapes.append((item["geometry"], item["value"]))
+        class_names_in_patch.add(item["class_name"])
+
+        if not shapes:
+            raise ValueError("No valid labeled polygons")
+
+        mask = rasterize(
+            shapes,
+            out_shape=(crop_size, crop_size),
+            transform=transform,
+            fill=0,
+            dtype="uint8",
+        )
 
     if not np.any(mask > 0):
         raise ValueError("Empty mask")

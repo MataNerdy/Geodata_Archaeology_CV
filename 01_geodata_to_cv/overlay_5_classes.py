@@ -6,6 +6,9 @@ import rasterio
 import matplotlib.pyplot as plt
 import numpy as np
 from shapely.geometry import box
+from matplotlib.patches import Patch
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 DATASET_ROOT = Path("/Volumes/Lexar/Датасет/")
 
@@ -42,6 +45,13 @@ COLOR_MAP = {
     "gorodishcha": "yellow",
     "fortifikatsii": "cyan",
     "arkhitektury": "magenta",
+}
+
+README_REGIONS = {
+    "005_ЛУБНО",
+    "027_ТИМЕРЕВО",
+    "039_САРСКОЕ",
+    "042_ИЗБОРСК",
 }
 
 
@@ -246,8 +256,8 @@ def load_geojsons(markup_dir: Path, target_crs: str):
         # Берём только полигональные геометрии.
         # Points/LineString тут не нужны для segmentation baseline.
         gdf = gdf[
-            gdf.geometry.notna()
-            & (~gdf.geometry.is_empty)
+            (~gdf.geometry.is_empty)
+            & (gdf.geometry.notna())
             & gdf.geometry.geom_type.isin(["Polygon", "MultiPolygon"])
         ].copy()
 
@@ -334,8 +344,8 @@ def test_region_overlay(region_info, save_dir="overlay_5_classes_test"):
 
         vmin = np.percentile(valid, 2)
         vmax = np.percentile(valid, 98)
-
         fig, ax = plt.subplots(figsize=(10, 10))
+
         ax.imshow(
             img,
             cmap="gray",
@@ -343,7 +353,7 @@ def test_region_overlay(region_info, save_dir="overlay_5_classes_test"):
             vmin=vmin,
             vmax=vmax,
         )
-
+        ax.set_axis_off()
         for idx, row in gdf_in_raster.iterrows():
             geom = row.geometry
             class_name = row["class_name"]
@@ -360,15 +370,35 @@ def test_region_overlay(region_info, save_dir="overlay_5_classes_test"):
             # c = geom.centroid
             # ax.text(c.x, c.y, f"{row['class_id']}", fontsize=7, color="white")
 
-        fallback_note = " | fallback to raster CRS" if used_fallback else ""
-        ax.set_title(
-            f"{region_dir.name} | {modality} | {raster_path.name}{fallback_note}\n"
-            f"{dict(gdf_in_raster['class_name'].value_counts())}"
+        title = f"{region_dir.name} | {modality}"
+        if used_fallback:
+            title += " | CRS fallback"
+
+        ax.set_title(title, fontsize=14, pad=10)
+
+        present_classes = sorted(gdf_in_raster["class_name"].unique())
+
+        legend_handles = [
+            Patch(
+                facecolor=COLOR_MAP.get(cls, "white"),
+                edgecolor=COLOR_MAP.get(cls, "white"),
+                alpha=0.25,
+                label=cls,
+            )
+            for cls in present_classes
+        ]
+
+        ax.legend(
+            handles=legend_handles,
+            loc="lower right",
+            fontsize=9,
+            framealpha=0.9,
+            facecolor="white",
+            edgecolor="lightgray",
         )
-        plt.tight_layout()
 
         out_path = save_dir / f"{region_dir.name}_{modality}_{raster_path.stem}_5classes.png"
-        plt.savefig(out_path, dpi=150)
+        plt.savefig(out_path, dpi=220, bbox_inches="tight", pad_inches=0.05)
         plt.close(fig)
 
         print("Saved:", out_path)
@@ -378,18 +408,9 @@ if __name__ == "__main__":
 
     print(f"Found {len(regions)} regions")
 
-    TARGET_REGIONS = {
-        "042_ИЗБОРСК",
-        "027_ТИМЕРЕВО",
-        "005_ЛУБНО",
-        "024_УСТЬ-РЕКА",
-        "039_САРСКОЕ",
-        "012_ЛИХУША",
-    }
-
     selected = [
         r for r in regions
-        if r["region_dir"].name in TARGET_REGIONS
+        if r["region_dir"].name in README_REGIONS
     ]
 
     print("\nSelected regions:")
@@ -399,5 +420,5 @@ if __name__ == "__main__":
     for r in selected:
         test_region_overlay(
             r,
-            save_dir="overlay_5_classes_portfolio_examples"
+            save_dir="overlay_assets"
         )
