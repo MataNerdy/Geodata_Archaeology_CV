@@ -67,7 +67,7 @@ MASK_DIR.mkdir(parents=True, exist_ok=True)
 metadata_rows = []
 global_idx = 0
 
-for region_info in regions:
+for region_info in regions[3:5]:  # можно ограничиться одной-двумя регионами для примера
     raster_path = region_info["raster_path"]
     utm_path = region_info["utm_path"]
     # можно переключать источник:
