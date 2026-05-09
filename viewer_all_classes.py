@@ -11,7 +11,7 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 # =========================
 
 DATASET_DIR = Path(
-    "/Users/Di/Documents/GitHub/My projects/Geodata_Archaeology_CV/dataset_5_classes_multiclass"
+    "/Users/Di/Documents/GitHub/My projects/Geodata_Archaeology_CV/datasets/dataset_5_classes_multiclass"
 )
 
 IMG_DIR = DATASET_DIR / "images"
