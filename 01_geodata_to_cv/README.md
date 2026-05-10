@@ -35,7 +35,7 @@ Computer vision pipeline for archaeological object detection and segmentation fr
     shapely
 
 ```md
-![LiDAR fortifications](/Users/Di/Documents/GitHub/My projects/Geodata_Archaeology_CV/assets/overlay_assets/img1.png)
+![LiDAR fortifications](assets/overlay_assets/img1.png)
 
 ```md
 ![Пример CRS fallback](assets/overlay_assets/img2.png)
