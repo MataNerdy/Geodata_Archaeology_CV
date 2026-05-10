@@ -1,4 +1,4 @@
-# Geodata Archaeology CV
+#  # Geospatial CV Pipeline for Archaeological Object Detection
 
 Computer vision pipeline for archaeological object detection and segmentation from multimodal geodata.
 
@@ -34,13 +34,12 @@ Computer vision pipeline for archaeological object detection and segmentation fr
     geopandas
     shapely
 
-![LiDAR fortifications](assets/overlay_assets/img7.png)
-![Пример CRS fallback](assets/overlay_assets/img2.png)
-
-
-<img src="assets/overlay_assets/img4.png" width="400">
-<img src="assets/overlay_assets/img2.png" width="400">
-
+<p align="center">
+    <img src="assets/overlay_assets/img1.png" width="700">
+    <img src="assets/overlay_assets/img2.png" width="700">
+    <img src="assets/overlay_assets/img3.png" width="700">
+    <img src="assets/overlay_assets/img4.png" width="700">
+</p>
 
 Некоторые растры имели несовпадающий CRS, поэтому пришлось реализовать fallback reprojection.
 
@@ -56,7 +55,9 @@ Computer vision pipeline for archaeological object detection and segmentation fr
     patch, mask = extract_patch_and_mask(src, polygon, padding=5)
 ```
 
-![Пример patch + mask](assets/patch.png)
+<p align="center">
+    <img src="assets/patch.png" width="700">
+</p>
 
 ### Adaptive crop extraction
 
@@ -69,12 +70,14 @@ Computer vision pipeline for archaeological object detection and segmentation fr
 ```python
     crop_size = max(object_size * context_scale, min_crop_size)
 ```
-
-![LiDAR fortifications](assets/mask_assets/mask4.png)
-
-![Aerial imagery kurgans and fortifications](assets/mask_assets/mask1.png)
-
-![multiclass_neighbors](assets/mask_assets/mask5.png)
+<p align="center">
+    <img src="assets/mask_assets/mask3.png" width="700">
+    <img src="assets/mask_assets/mask1.png" width="700">
+    <img src="assets/mask_assets/mask2.png" width="700">
+    <img src="assets/mask_assets/mask4.png" width="700">
+    <img src="assets/mask_assets/mask5.png" width="700">
+    <img src="assets/mask_assets/mask6.png" width="700">
+</p>
 
 Это позволило:
 
@@ -86,8 +89,13 @@ Computer vision pipeline for archaeological object detection and segmentation fr
 
 После segmentation pipeline был собран detection pipeline.
 
-![Dense bbox scene](assets/bbox_assets/bbox2.png)
-![Multi-object scenes](assets/bbox_assets/bbox3.png)
+<p align="center">
+    <img src="assets/bbox_assets/bbox1.png" width="700">
+    <img src="assets/bbox_assets/bbox2.png" width="700">
+    <img src="assets/bbox_assets/bbox3.png" width="700">
+    <img src="assets/bbox_assets/bbox4.png" width="700">
+    <img src="assets/bbox_assets/bbox5.png" width="700">
+</p>
 
 Одна из сложностей:
 
