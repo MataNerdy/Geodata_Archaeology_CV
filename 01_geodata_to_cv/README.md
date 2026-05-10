@@ -35,8 +35,12 @@ Computer vision pipeline for archaeological object detection and segmentation fr
     shapely
 
 ![LiDAR fortifications](assets/overlay_assets/img7.png)
-
 ![Пример CRS fallback](assets/overlay_assets/img2.png)
+
+
+<img src="assets/overlay_assets/img4.png" width="400">
+<img src="assets/overlay_assets/img2.png" width="400">
+
 
 Некоторые растры имели несовпадающий CRS, поэтому пришлось реализовать fallback reprojection.
 
