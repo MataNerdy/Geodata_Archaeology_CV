@@ -34,10 +34,10 @@ Computer vision pipeline for converting archaeological geodata into segmentation
     shapely
 
 <p align="center">
-    <img src="assets/overlay_assets/img4.png" width="500">
-    <img src="assets/overlay_assets/img2.png" width="500">
-    <img src="assets/overlay_assets/img7.png" width="500">
-    <img src="assets/overlay_assets/img5.png" width="500">
+    <img src="assets/overlay_assets/img4.png" width="700">
+    <img src="assets/overlay_assets/img2.png" width="700">
+    <img src="assets/overlay_assets/img7.png" width="700">
+    <img src="assets/overlay_assets/img5.png" width="700">
 </p>
 
 Некоторые регионы содержали несовпадающие CRS между raster и GeoJSON данными, поэтому был реализован fallback reprojection pipeline.
