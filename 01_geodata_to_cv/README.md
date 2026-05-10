@@ -34,7 +34,7 @@ Computer vision pipeline for archaeological object detection and segmentation fr
     geopandas
     shapely
 
-![LiDAR fortifications](assets/overlay_assets/img1.png)
+![LiDAR fortifications](assets/overlay_assets/img7.png)
 
 ![Пример CRS fallback](assets/overlay_assets/img2.png)
 
@@ -48,40 +48,56 @@ Computer vision pipeline for archaeological object detection and segmentation fr
 
 Сначала использовался простой crop вокруг объекта.
 
-patch, mask = extract_patch_and_mask(src, polygon, padding=5)
+```python
+    patch, mask = extract_patch_and_mask(src, polygon, padding=5)
+```
 
+![Пример patch + mask](assets/patch.png)
 
 ### Adaptive crop extraction
 
 Позже появился adaptive crop pipeline.
 
 Идея:
-размер crop зависит от размера объекта.
 
-crop_size = max(object_size * context_scale, min_crop_size)
+    размер crop зависит от размера объекта.
+
+```python
+    crop_size = max(object_size * context_scale, min_crop_size)
+```
+
+![LiDAR fortifications](assets/mask_assets/mask4.png)
+
+![Aerial imagery kurgans and fortifications](assets/mask_assets/mask1.png)
+
+![multiclass_neighbors](assets/mask_assets/mask5.png)
 
 Это позволило:
 
-не терять маленькие объекты,
-сохранять контекст,
-избежать сильного ресайза.
-YOLO dataset generation
+    не терять маленькие объекты,
+    сохранять контекст,
+    избежать сильного ресайза.
+
+### YOLO dataset generation
 
 После segmentation pipeline был собран detection pipeline.
 
-Dense bbox scene
+![Dense bbox scene](assets/bbox_assets/bbox2.png)
+![Multi-object scenes](assets/bbox_assets/bbox3.png)
 
 Одна из сложностей:
-огромное количество маленьких объектов на одном изображении.
 
-Используемые инструменты
-Python
-rasterio
-geopandas
-shapely
-numpy
-pandas
-matplotlib
-PyTorch
-YOLOv8
-Streamlit
+    огромное количество маленьких объектов на одном изображении.
+
+### Используемые инструменты
+
+    Python
+    rasterio
+    geopandas
+    shapely
+    numpy
+    pandas
+    matplotlib
+    PyTorch
+    YOLOv8
+    Streamlit
