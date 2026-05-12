@@ -105,8 +105,11 @@ foreground localization.
 "где находится археологический объект", и только затем
 "какого он типа".
 
-## Примеры предсказаний
+## Примеры предсказаний (baseline vs final version)
 
 <p align="center">
-    <img src="assets/val_predictions.png" width="700">
+    <img src="assets/val_perd_before_1.png" width="700">
+    <img src="assets/val_perd_after_1.png" width="700">
+    <img src="assets/val_perd_before_2.png" width="700">
+    <img src="assets/val_perd_after_2.png" width="700">
 </p>
