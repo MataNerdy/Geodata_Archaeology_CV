@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATA_ROOT="${DATA_ROOT:-/kaggle/input/kurgans-dataset/kurgans_dataset}"
+DATA_ROOT="${DATA_ROOT:-/kaggle/input/kurgans-dataset/segmentation_dataset}"
 RUN_ROOT="${RUN_ROOT:-/kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
 LOG_DIR="$RUN_ROOT/logs"

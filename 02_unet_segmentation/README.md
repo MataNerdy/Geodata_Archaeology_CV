@@ -7,7 +7,7 @@
 Ожидаемый датасет:
 
 ```text
-../datasets/kurgans_dataset/
+../datasets/segmentation_dataset/
 ├── images/
 │   └── 000000.npy
 ├── masks/
@@ -27,6 +27,8 @@
 - `1` - whole kurgan;
 - `2` - damaged kurgan.
 
+Если в исходных масках встречаются другие археологические классы, например `3`, `4`, `5`, loader маппит их в background `0`. Для этого эксперимента модель учится только на классах курганов.
+
 Скрипты проверяют наличие `metadata.csv`, папок `images/` и `masks/`, соответствие `sample_id` файлам, непустой train/val split и наличие выбранных validation regions.
 
 ## Окружение
@@ -45,7 +47,7 @@ python -c "import numpy, pandas, torch, matplotlib; print('env ok')"
 cd 02_unet_segmentation
 
 python train.py \
-  --data-root "../datasets/kurgans_dataset" \
+  --data-root "../datasets/segmentation_dataset" \
   --out-dir "runs/smoke_test" \
   --epochs 2 \
   --batch-size 2 \
@@ -57,7 +59,7 @@ python train.py \
 
 ```bash
 python train.py \
-  --data-root "../datasets/kurgans_dataset" \
+  --data-root "../datasets/segmentation_dataset" \
   --out-dir "runs/baseline_all_modalities_ce_dice" \
   --epochs 50 \
   --batch-size 8 \
@@ -72,7 +74,7 @@ python train.py \
 
 ```bash
 python train.py \
-  --data-root "../datasets/kurgans_dataset" \
+  --data-root "../datasets/segmentation_dataset" \
   --out-dir "runs/unet_kurgans_Li_only" \
   --epochs 50 \
   --batch-size 8 \
@@ -88,7 +90,7 @@ python train.py \
 
 ```bash
 python train.py \
-  --data-root "../datasets/kurgans_dataset" \
+  --data-root "../datasets/segmentation_dataset" \
   --out-dir "runs/no_dice_all_modalities" \
   --epochs 50 \
   --batch-size 8 \
@@ -135,7 +137,7 @@ python train.py \
 
 ```bash
 python evaluate.py \
-  --data-root "../datasets/kurgans_dataset" \
+  --data-root "../datasets/segmentation_dataset" \
   --checkpoint "runs/baseline_all_modalities_ce_dice/best_model.pth" \
   --out-dir "runs/baseline_all_modalities_ce_dice" \
   --split custom_regions \
@@ -149,7 +151,7 @@ python evaluate.py \
 
 ```bash
 python visualize_predictions.py \
-  --data-root "../datasets/kurgans_dataset" \
+  --data-root "../datasets/segmentation_dataset" \
   --checkpoint "runs/baseline_all_modalities_ce_dice/best_model.pth" \
   --output "runs/baseline_all_modalities_ce_dice/prediction_examples_eval.png" \
   --split custom_regions \
@@ -159,7 +161,7 @@ python visualize_predictions.py \
 ## Запуск на Kaggle
 
 1. Включить Internet в настройках Kaggle notebook, чтобы notebook мог клонировать репозиторий через GitHub.
-2. Загрузить `kurgans_dataset` как отдельный Kaggle Dataset с путем `/kaggle/input/kurgans-dataset/kurgans_dataset`.
+2. Загрузить `segmentation_dataset` как отдельный Kaggle Dataset с путем `/kaggle/input/kurgans-dataset/segmentation_dataset`.
 3. Включить GPU в настройках notebook.
 4. Запустить [notebooks/kurgans_unet_kaggle.ipynb](../notebooks/kurgans_unet_kaggle.ipynb).
 5. После выполнения скачать `/kaggle/working/kurgans_runs.zip`.
@@ -174,7 +176,7 @@ bash run_kaggle_experiments.sh
 
 - `REPO_URL` - URL репозитория для Kaggle notebook, по умолчанию `https://github.com/MataNerdy/Geodata_Archaeology_CV.git`;
 - `BRANCH` - ветка репозитория для Kaggle notebook, по умолчанию `main`;
-- `DATA_ROOT` - путь к датасету, по умолчанию `/kaggle/input/kurgans-dataset/kurgans_dataset`;
+- `DATA_ROOT` - путь к датасету, по умолчанию `/kaggle/input/kurgans-dataset/segmentation_dataset`;
 - `RUN_ROOT` - путь для результатов, по умолчанию `/kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs`;
 - `PYTHON_BIN` - Python executable, по умолчанию `python`.
 

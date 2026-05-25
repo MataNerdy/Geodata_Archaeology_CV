@@ -92,7 +92,7 @@ def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data-root", default="../datasets/kurgans_dataset")
+    parser.add_argument("--data-root", default="../datasets/segmentation_dataset")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--output", default="prediction_examples.png")
     parser.add_argument("--image-size", type=int, default=256)

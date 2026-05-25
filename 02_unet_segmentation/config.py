@@ -18,7 +18,7 @@ SUPPORTED_MODALITIES = ("Li", "Ae", "SpOr")
 class TrainConfig:
     """Default training parameters used by the CLI scripts."""
 
-    data_root: Path = Path("../datasets/kurgans_dataset")
+    data_root: Path = Path("../datasets/segmentation_dataset")
     out_dir: Path = Path("runs/unet_kurgans_baseline")
     image_size: int = 256
     num_classes: int = 3

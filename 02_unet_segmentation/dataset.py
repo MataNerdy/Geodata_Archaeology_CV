@@ -270,13 +270,7 @@ class KurganSegmentationDataset(Dataset):
         if mask.shape != (self.image_size, self.image_size):
             mask = self._resize_mask(mask)
 
-        mask = mask.astype(np.int64)
-        values = np.unique(mask)
-        if not np.all(np.isin(values, [0, 1, 2])):
-            raise ValueError(
-                f"Unexpected mask values for sample {sample_id}: {values.tolist()}. "
-                "Expected only 0, 1, 2."
-            )
+        mask = remap_to_kurgan_classes(mask)
 
         image = self._normalize(image)
         return {
@@ -286,3 +280,10 @@ class KurganSegmentationDataset(Dataset):
             "region": str(row["region"]),
             "modality": str(row["modality"]),
         }
+
+
+def remap_to_kurgan_classes(mask: np.ndarray) -> np.ndarray:
+    """Keep kurgan classes 1/2 and map all other labels to background."""
+
+    mask = mask.astype(np.int64)
+    return np.where(np.isin(mask, [1, 2]), mask, 0).astype(np.int64)

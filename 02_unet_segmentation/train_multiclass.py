@@ -10,9 +10,9 @@ from utils.metrics import evaluate
 from losses.multiclass_losses import CombinedMultiClassLoss
 
 
-IMAGES_DIR = "datasets/kurgans_dataset/images"
-MASKS_DIR = "datasets/kurgans_dataset/masks"
-DATA_PATH = pd.read_csv("datasets/kurgans_dataset/metadata.csv")
+IMAGES_DIR = "datasets/segmentation_dataset/images"
+MASKS_DIR = "datasets/segmentation_dataset/masks"
+DATA_PATH = pd.read_csv("datasets/segmentation_dataset/metadata.csv")
 
 def set_seed(seed=42):
     random.seed(seed)
