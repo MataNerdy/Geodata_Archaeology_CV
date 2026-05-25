@@ -1,0 +1,176 @@
+DATA_ROOT=/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset
+RUN_ROOT=/kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs
+PYTHON_BIN=python
+python version: 3.12.12 (main, Oct 10 2025, 08:52:57) [GCC 11.4.0]
+torch version: 2.10.0+cu128
+cuda available: True
+cuda device: Tesla T4
+Running smoke test...
+Device: cuda
+Train samples: 3075 | Val samples: 185
+Custom validation regions:
+  - 042_ИЗБОРСК
+Validation samples by region/modality:
+     region modality  samples
+042_ИЗБОРСК       Ae      135
+042_ИЗБОРСК       Or        4
+042_ИЗБОРСК     SpOr       46
+Epoch 001/2 | train_loss=1.5633 | val_loss=1.4631 | val_fg_iou=0.0092 | val_mean_fg_iou=0.0012
+Saved new best model: /kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs/smoke_test/best_model.pth
+Epoch 002/2 | train_loss=1.5150 | val_loss=1.3670 | val_fg_iou=0.0037 | val_mean_fg_iou=0.0007
+Best epoch: 1 | best val mean foreground IoU: 0.0012
+Smoke test completed. Running baseline...
+Device: cuda
+Train samples: 2584 | Val samples: 676
+Custom validation regions:
+  - 007_ЮШКОВО
+  - 008_СЕЛЯНЕ
+  - 025_ШУМГОРА
+  - 033_МИЛОВИДОВО_0.1км
+  - 042_ИЗБОРСК
+  - 044_ГОЧЕВО
+  - 047_КАЛМЫКИЯ_1
+Validation samples by region/modality:
+              region modality  samples
+          007_ЮШКОВО       Ae       42
+          007_ЮШКОВО       Li       41
+          008_СЕЛЯНЕ       Ae       71
+          008_СЕЛЯНЕ       Li       21
+         025_ШУМГОРА       Li        7
+         025_ШУМГОРА     SpOr        6
+033_МИЛОВИДОВО_0.1км       Ae       78
+033_МИЛОВИДОВО_0.1км       Li        1
+033_МИЛОВИДОВО_0.1км     SpOr       30
+         042_ИЗБОРСК       Ae      135
+         042_ИЗБОРСК       Or        4
+         042_ИЗБОРСК     SpOr       46
+          044_ГОЧЕВО       Ae      110
+          044_ГОЧЕВО     SpOr        2
+      047_КАЛМЫКИЯ_1     SpOr       82
+Epoch 001/50 | train_loss=1.4365 | val_loss=2.0619 | val_fg_iou=0.1668 | val_mean_fg_iou=0.0521
+Saved new best model: /kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs/baseline_all_modalities_ce_dice/best_model.pth
+Epoch 002/50 | train_loss=1.2891 | val_loss=2.4102 | val_fg_iou=0.1088 | val_mean_fg_iou=0.0382
+Epoch 003/50 | train_loss=1.2477 | val_loss=2.0821 | val_fg_iou=0.1704 | val_mean_fg_iou=0.0479
+Epoch 004/50 | train_loss=1.2420 | val_loss=2.1265 | val_fg_iou=0.1807 | val_mean_fg_iou=0.0465
+Epoch 005/50 | train_loss=1.2210 | val_loss=2.1973 | val_fg_iou=0.1816 | val_mean_fg_iou=0.0576
+Saved new best model: /kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs/baseline_all_modalities_ce_dice/best_model.pth
+Epoch 006/50 | train_loss=1.2160 | val_loss=2.0953 | val_fg_iou=0.2003 | val_mean_fg_iou=0.0604
+Saved new best model: /kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs/baseline_all_modalities_ce_dice/best_model.pth
+Epoch 007/50 | train_loss=1.1933 | val_loss=2.1306 | val_fg_iou=0.1926 | val_mean_fg_iou=0.0569
+Epoch 008/50 | train_loss=1.1805 | val_loss=1.9680 | val_fg_iou=0.2535 | val_mean_fg_iou=0.0978
+Saved new best model: /kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs/baseline_all_modalities_ce_dice/best_model.pth
+Epoch 009/50 | train_loss=1.1658 | val_loss=2.1828 | val_fg_iou=0.1884 | val_mean_fg_iou=0.0581
+Epoch 010/50 | train_loss=1.1416 | val_loss=2.0074 | val_fg_iou=0.2217 | val_mean_fg_iou=0.0766
+Epoch 011/50 | train_loss=1.1312 | val_loss=2.0240 | val_fg_iou=0.2417 | val_mean_fg_iou=0.0921
+Epoch 012/50 | train_loss=1.1316 | val_loss=2.3814 | val_fg_iou=0.2014 | val_mean_fg_iou=0.0611
+Epoch 013/50 | train_loss=1.1032 | val_loss=2.0070 | val_fg_iou=0.2272 | val_mean_fg_iou=0.0832
+Epoch 014/50 | train_loss=1.0868 | val_loss=1.9876 | val_fg_iou=0.2989 | val_mean_fg_iou=0.1197
+Saved new best model: /kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs/baseline_all_modalities_ce_dice/best_model.pth
+Epoch 015/50 | train_loss=1.0635 | val_loss=1.9353 | val_fg_iou=0.2292 | val_mean_fg_iou=0.0989
+Epoch 016/50 | train_loss=1.0585 | val_loss=1.9132 | val_fg_iou=0.2356 | val_mean_fg_iou=0.0854
+Epoch 017/50 | train_loss=1.0421 | val_loss=2.2693 | val_fg_iou=0.2070 | val_mean_fg_iou=0.0704
+Epoch 018/50 | train_loss=1.0068 | val_loss=2.0592 | val_fg_iou=0.2580 | val_mean_fg_iou=0.1176
+Epoch 019/50 | train_loss=1.0000 | val_loss=2.2262 | val_fg_iou=0.2248 | val_mean_fg_iou=0.0765
+Epoch 020/50 | train_loss=0.9982 | val_loss=2.2019 | val_fg_iou=0.2700 | val_mean_fg_iou=0.1008
+Epoch 021/50 | train_loss=0.9253 | val_loss=2.0459 | val_fg_iou=0.2619 | val_mean_fg_iou=0.0888
+Epoch 022/50 | train_loss=0.9164 | val_loss=2.0839 | val_fg_iou=0.2605 | val_mean_fg_iou=0.0984
+Epoch 023/50 | train_loss=0.8809 | val_loss=2.1791 | val_fg_iou=0.2279 | val_mean_fg_iou=0.0888
+Epoch 024/50 | train_loss=0.8642 | val_loss=2.1797 | val_fg_iou=0.2728 | val_mean_fg_iou=0.1049
+Epoch 025/50 | train_loss=0.8478 | val_loss=2.3085 | val_fg_iou=0.2893 | val_mean_fg_iou=0.1015
+Epoch 026/50 | train_loss=0.8174 | val_loss=2.2351 | val_fg_iou=0.2744 | val_mean_fg_iou=0.1178
+Epoch 027/50 | train_loss=0.7714 | val_loss=2.1911 | val_fg_iou=0.2899 | val_mean_fg_iou=0.1155
+Epoch 028/50 | train_loss=0.7543 | val_loss=2.3915 | val_fg_iou=0.2855 | val_mean_fg_iou=0.1178
+Epoch 029/50 | train_loss=0.7414 | val_loss=2.3303 | val_fg_iou=0.2832 | val_mean_fg_iou=0.1136
+Epoch 030/50 | train_loss=0.7237 | val_loss=2.3831 | val_fg_iou=0.2936 | val_mean_fg_iou=0.1097
+Epoch 031/50 | train_loss=0.7052 | val_loss=2.2631 | val_fg_iou=0.2689 | val_mean_fg_iou=0.0956
+Epoch 032/50 | train_loss=0.7131 | val_loss=2.3938 | val_fg_iou=0.2836 | val_mean_fg_iou=0.0948
+Epoch 033/50 | train_loss=0.6639 | val_loss=2.3488 | val_fg_iou=0.2838 | val_mean_fg_iou=0.0986
+Epoch 034/50 | train_loss=0.6647 | val_loss=2.4028 | val_fg_iou=0.2841 | val_mean_fg_iou=0.1071
+Epoch 035/50 | train_loss=0.6285 | val_loss=2.5478 | val_fg_iou=0.2954 | val_mean_fg_iou=0.1099
+Epoch 036/50 | train_loss=0.6428 | val_loss=2.6872 | val_fg_iou=0.2811 | val_mean_fg_iou=0.0982
+Epoch 037/50 | train_loss=0.6320 | val_loss=2.6133 | val_fg_iou=0.3009 | val_mean_fg_iou=0.1117
+Epoch 038/50 | train_loss=0.6203 | val_loss=2.6106 | val_fg_iou=0.2845 | val_mean_fg_iou=0.1075
+Epoch 039/50 | train_loss=0.6019 | val_loss=2.4967 | val_fg_iou=0.2871 | val_mean_fg_iou=0.1065
+Epoch 040/50 | train_loss=0.6058 | val_loss=2.4488 | val_fg_iou=0.2849 | val_mean_fg_iou=0.1053
+Epoch 041/50 | train_loss=0.6027 | val_loss=2.4237 | val_fg_iou=0.2819 | val_mean_fg_iou=0.1023
+Epoch 042/50 | train_loss=0.5952 | val_loss=2.5930 | val_fg_iou=0.2793 | val_mean_fg_iou=0.0997
+Epoch 043/50 | train_loss=0.5866 | val_loss=2.5147 | val_fg_iou=0.2889 | val_mean_fg_iou=0.1030
+Epoch 044/50 | train_loss=0.5965 | val_loss=2.5301 | val_fg_iou=0.2807 | val_mean_fg_iou=0.1026
+Epoch 045/50 | train_loss=0.5727 | val_loss=2.5852 | val_fg_iou=0.2851 | val_mean_fg_iou=0.1047
+Epoch 046/50 | train_loss=0.5825 | val_loss=2.6209 | val_fg_iou=0.2846 | val_mean_fg_iou=0.1044
+Epoch 047/50 | train_loss=0.5873 | val_loss=2.5990 | val_fg_iou=0.2768 | val_mean_fg_iou=0.0983
+Epoch 048/50 | train_loss=0.5696 | val_loss=2.7331 | val_fg_iou=0.2867 | val_mean_fg_iou=0.1050
+Epoch 049/50 | train_loss=0.5802 | val_loss=2.8309 | val_fg_iou=0.2887 | val_mean_fg_iou=0.1084
+Epoch 050/50 | train_loss=0.5713 | val_loss=2.5286 | val_fg_iou=0.2871 | val_mean_fg_iou=0.1021
+Best epoch: 14 | best val mean foreground IoU: 0.1197
+Evaluating baseline checkpoint...
+{
+  "val_loss": 1.9875638863619636,
+  "val_ce_loss": 1.1022612543667063,
+  "val_dice_loss": 0.8853026312940261,
+  "val_iou_background": 0.8213089108467102,
+  "val_dice_background": 0.9018886089324951,
+  "val_iou_whole_kurgan": 0.0520532988011837,
+  "val_dice_whole_kurgan": 0.09895563125610352,
+  "val_iou_damaged_kurgan": 0.18736149370670319,
+  "val_dice_damaged_kurgan": 0.31559300422668457,
+  "val_mean_fg_iou": 0.11970739811658859,
+  "val_mean_fg_dice": 0.20727431774139404,
+  "val_fg_iou": 0.2988676428794861,
+  "val_fg_dice": 0.46019724011421204,
+  "val_pixel_accuracy": 0.8057352900505066,
+  "val_Ae_iou_background": 0.8021575808525085,
+  "val_Ae_dice_background": 0.8902191519737244,
+  "val_Ae_iou_whole_kurgan": 0.06968114525079727,
+  "val_Ae_dice_whole_kurgan": 0.13028395175933838,
+  "val_Ae_iou_damaged_kurgan": 0.16063928604125977,
+  "val_Ae_dice_damaged_kurgan": 0.27681171894073486,
+  "val_Ae_mean_fg_iou": 0.11516021192073822,
+  "val_Ae_mean_fg_dice": 0.20354783535003662,
+  "val_Ae_fg_iou": 0.2193092405796051,
+  "val_Ae_fg_dice": 0.35972702503204346,
+  "val_Ae_pixel_accuracy": 0.7969083189964294,
+  "val_Li_iou_background": 0.6455607414245605,
+  "val_Li_dice_background": 0.7846088409423828,
+  "val_Li_iou_whole_kurgan": 0.029744425788521767,
+  "val_Li_dice_whole_kurgan": 0.0577705018222332,
+  "val_Li_iou_damaged_kurgan": 0.32007649540901184,
+  "val_Li_dice_damaged_kurgan": 0.48493626713752747,
+  "val_Li_mean_fg_iou": 0.17491045594215393,
+  "val_Li_mean_fg_dice": 0.2713533937931061,
+  "val_Li_fg_iou": 0.603508710861206,
+  "val_Li_fg_dice": 0.7527351975440979,
+  "val_Li_pixel_accuracy": 0.597061812877655,
+  "val_Or_iou_background": 0.8444976806640625,
+  "val_Or_dice_background": 0.9156939387321472,
+  "val_Or_iou_whole_kurgan": 0.0,
+  "val_Or_dice_whole_kurgan": 0.0,
+  "val_Or_iou_damaged_kurgan": 0.0,
+  "val_Or_dice_damaged_kurgan": 0.0,
+  "val_Or_mean_fg_iou": 0.0,
+  "val_Or_mean_fg_dice": 0.0,
+  "val_Or_fg_iou": 0.0,
+  "val_Or_fg_dice": 0.0,
+  "val_Or_pixel_accuracy": 0.8444976806640625,
+  "val_SpOr_iou_background": 0.9167489409446716,
+  "val_SpOr_dice_background": 0.9565665125846863,
+  "val_SpOr_iou_whole_kurgan": 0.044495005160570145,
+  "val_SpOr_dice_whole_kurgan": 0.08519907295703888,
+  "val_SpOr_iou_damaged_kurgan": 0.012961653992533684,
+  "val_SpOr_dice_damaged_kurgan": 0.025591598823666573,
+  "val_SpOr_mean_fg_iou": 0.02872832864522934,
+  "val_SpOr_mean_fg_dice": 0.05539533495903015,
+  "val_SpOr_fg_iou": 0.025419123470783234,
+  "val_SpOr_fg_dice": 0.04957801476120949,
+  "val_SpOr_pixel_accuracy": 0.9159805178642273
+}
+Rendering baseline prediction examples...
+Saved predictions to /kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs/baseline_all_modalities_ce_dice/prediction_examples_eval.png
+Done. Outputs are in /kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs
+CompletedProcess(args=['bash', 'run_kaggle_experiments.sh'], returncode=0)  
+epoch	lr	train_loss	train_ce_loss	train_dice_loss	train_iou_background	train_dice_background	train_iou_whole_kurgan	train_dice_whole_kurgan	train_iou_damaged_kurgan	...	val_SpOr_dice_background	val_SpOr_iou_whole_kurgan	val_SpOr_dice_whole_kurgan	val_SpOr_iou_damaged_kurgan	val_SpOr_dice_damaged_kurgan	val_SpOr_mean_fg_iou	val_SpOr_mean_fg_dice	val_SpOr_fg_iou	val_SpOr_fg_dice	val_SpOr_pixel_accuracy
+45	46	0.000031	0.582475	0.251060	0.331416	0.822266	0.902465	0.531096	0.693746	0.643434	...	0.941322	0.053157	0.100949	0.079575	0.147419	0.066366	0.124184	0.086831	0.159788	0.889359
+46	47	0.000031	0.587317	0.253895	0.333422	0.820783	0.901571	0.532555	0.694990	0.641702	...	0.940350	0.049287	0.093943	0.080908	0.149704	0.065097	0.121823	0.087832	0.161480	0.887658
+47	48	0.000031	0.569634	0.247286	0.322349	0.824580	0.903858	0.534236	0.696420	0.645890	...	0.943822	0.060911	0.114828	0.079341	0.147017	0.070126	0.130922	0.086339	0.158955	0.893852
+48	49	0.000031	0.580215	0.253709	0.326506	0.824130	0.903587	0.531831	0.694373	0.644987	...	0.946923	0.067846	0.127071	0.078079	0.144848	0.072962	0.135959	0.084935	0.156572	0.899398
+49	50	0.000031	0.571341	0.252647	0.318695	0.824446	0.903777	0.540975	0.702121	0.646356	...	0.940134	0.050819	0.096722	0.084832	0.156397	0.067826	0.126560	0.091453	0.167580	0.887426

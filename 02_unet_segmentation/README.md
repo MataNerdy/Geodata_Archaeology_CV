@@ -67,6 +67,7 @@ python train.py \
   --image-size 256 \
   --split custom_regions \
   --val-regions "042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА" \
+  --modalities Li Ae SpOr \
   --class-weights "0.2,1.0,3.0"
 ```
 
@@ -98,8 +99,15 @@ python train.py \
   --image-size 256 \
   --split custom_regions \
   --val-regions "042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА" \
+  --modalities Li Ae SpOr \
   --class-weights "0.2,1.0,3.0" \
   --dice-weight 0
+```
+
+Baseline с early stopping на 12 эпох без улучшения:
+
+```bash
+bash run_early_stopping_experiment.sh
 ```
 
 Для `custom_regions` скрипт проверяет, что список `--val-regions` не пустой, все регионы есть в `metadata.csv`, а train/val split не оказался пустым. В начале запуска он печатает найденные validation regions и количество samples по `region/modality`.
@@ -111,9 +119,11 @@ python train.py \
 | baseline_all | Li,Ae,SpOr | CE + Dice | 0.2,1.0,3.0 | Общая модель |
 | li_only | Li | CE + Dice | 0.2,1.0,3.0 | Проверить LiDAR |
 | ae_only | Ae | CE + Dice | 0.2,1.0,3.0 | Проверить аэрофото |
-| spor_only | SpOr | CE + Dice | 0.2,1.0,3.0 | Проверить спутник |
+| li_ae_only | Li,Ae | CE + Dice | 0.2,1.0,3.0 | Проверить связку LiDAR + аэрофото |
+| spor_only_diagnostic | SpOr | CE + Dice | 0.2,1.0,3.0 | Диагностически проверить спутник |
 | no_dice | Li,Ae,SpOr | CE | 0.2,1.0,3.0 | Проверить влияние Dice |
 | image_128 | Li,Ae,SpOr | CE + Dice | 0.2,1.0,3.0 | Проверить размер input |
+| lower_damaged_weight | Li,Ae,SpOr | CE + Dice | 0.2,1.0,2.0 | Проверить меньший вес damaged |
 
 ## Что сохраняется
 
@@ -142,6 +152,7 @@ python evaluate.py \
   --out-dir "runs/baseline_all_modalities_ce_dice" \
   --split custom_regions \
   --val-regions "042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА" \
+  --modalities Li Ae SpOr \
   --class-weights "0.2,1.0,3.0"
 ```
 
@@ -155,13 +166,14 @@ python visualize_predictions.py \
   --checkpoint "runs/baseline_all_modalities_ce_dice/best_model.pth" \
   --output "runs/baseline_all_modalities_ce_dice/prediction_examples_eval.png" \
   --split custom_regions \
-  --val-regions "042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА"
+  --val-regions "042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА" \
+  --modalities Li Ae SpOr
 ```
 
 ## Запуск на Kaggle
 
 1. Включить Internet в настройках Kaggle notebook, чтобы notebook мог клонировать репозиторий через GitHub.
-2. Загрузить `segmentation_dataset` как отдельный Kaggle Dataset с путем `/kaggle/input/kurgans-dataset/segmentation_dataset`.
+2. Загрузить `segmentation_dataset` как отдельный Kaggle Dataset с путем `/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset`.
 3. Включить GPU в настройках notebook.
 4. Запустить [notebooks/kurgans_unet_kaggle.ipynb](../notebooks/kurgans_unet_kaggle.ipynb).
 5. После выполнения скачать `/kaggle/working/kurgans_runs.zip`.
@@ -176,11 +188,23 @@ bash run_kaggle_experiments.sh
 
 - `REPO_URL` - URL репозитория для Kaggle notebook, по умолчанию `https://github.com/MataNerdy/Geodata_Archaeology_CV.git`;
 - `BRANCH` - ветка репозитория для Kaggle notebook, по умолчанию `main`;
-- `DATA_ROOT` - путь к датасету, по умолчанию `/kaggle/input/kurgans-dataset/segmentation_dataset`;
+- `DATA_ROOT` - путь к датасету, по умолчанию `/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset`;
 - `RUN_ROOT` - путь для результатов, по умолчанию `/kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs`;
 - `PYTHON_BIN` - Python executable, по умолчанию `python`.
 
 `run_kaggle_experiments.sh` печатает версии Python/PyTorch, проверяет CUDA, запускает smoke test, затем baseline, `evaluate.py` и `visualize_predictions.py`. Логи сохраняются в `RUN_ROOT/logs`.
+
+Kaggle-скрипт запускает все основные эксперименты с early stopping `--patience 12`:
+
+- `baseline_all_modalities_ce_dice`
+- `li_only`
+- `ae_only`
+- `li_ae_only`
+- `spor_only_diagnostic`
+- `no_dice`
+- `lower_damaged_weight`
+
+После каждого обучения запускается `evaluate.py`; все `evaluation.json` собираются в `RUN_ROOT/experiments_summary.csv`.
 
 ## Следующие эксперименты
 
