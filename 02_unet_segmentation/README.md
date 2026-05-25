@@ -1,115 +1,189 @@
-# U-Net segmentation of archaeological geospatial imagery
+# 02_unet_segmentation
 
-В данном блоке исследуется задача сегментации археологических объектов
-на геопространственных данных:
+Экспериментальный пайплайн для semantic segmentation курганов на патчах геоданных.
 
-- LiDAR
-- aerial imagery
-- orthophotos
-- satellite imagery
+## Структура датасета
 
-Основной фокус:
-составление baseline для задачи cегментации курганов и их типов.
+Ожидаемый датасет:
 
-## Задача
+```text
+../datasets/kurgans_dataset/
+├── images/
+│   └── 000000.npy
+├── masks/
+│   └── 000000.npy
+└── metadata.csv
+```
 
-Вход:
+`metadata.csv` должен содержать как минимум:
 
-- grayscale raster patch
-- размер: 256×256
+- `sample_id` - идентификатор патча, совпадает с именами `.npy`;
+- `region` - регион для region-aware split;
+- `modality` - модальность, например `Li`, `Ae`, `SpOr`.
 
-Выход:
+Маска обучается как 3-классовая:
 
-- segmentation mask
+- `0` - background;
+- `1` - whole kurgan;
+- `2` - damaged kurgan.
 
-Классы:
+Скрипты проверяют наличие `metadata.csv`, папок `images/` и `masks/`, соответствие `sample_id` файлам, непустой train/val split и наличие выбранных validation regions.
 
-- 0 — background
-- 1 — whole kurgans
-- 2 — damaged kurgans
+## Окружение
 
-## Архитектура
+Команды ниже нужно запускать из Python-окружения, где установлены `numpy`, `pandas`, `torch` и `matplotlib`.
 
-Использована облегчённая версия U-Net:
+```bash
+python -c "import numpy, pandas, torch, matplotlib; print('env ok')"
+```
 
-- encoder-decoder architecture
-- skip connections
-- BatchNorm + ReLU
-- input: 1 channel
-- output: 3 classes
+## Обучение
 
-## Dataset pipeline
+Минимальный smoke test перед обучением:
 
-Перед обучением был реализован полный pipeline подготовки данных:
+```bash
+cd 02_unet_segmentation
 
-- CRS alignment
-- raster/vector synchronization
-- adaptive crop extraction
-- mask rasterization
-- metadata generation
-- modality-aware dataset building
+python train.py \
+  --data-root "../datasets/kurgans_dataset" \
+  --out-dir "runs/smoke_test" \
+  --epochs 2 \
+  --batch-size 2 \
+  --split custom_regions \
+  --val-regions "042_ИЗБОРСК"
+```
 
-Особое внимание уделялось:
+Первый честный baseline:
 
-- корректной reprojection
-- region-aware split
-- предотвращению spatial leakage
+```bash
+python train.py \
+  --data-root "../datasets/kurgans_dataset" \
+  --out-dir "runs/baseline_all_modalities_ce_dice" \
+  --epochs 50 \
+  --batch-size 8 \
+  --lr 1e-3 \
+  --image-size 256 \
+  --split custom_regions \
+  --val-regions "042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА" \
+  --class-weights "0.2,1.0,3.0"
+```
 
-## Validation strategy
+Полезные параметры:
 
-Использовался region-aware split вместо random split.
+```bash
+python train.py \
+  --data-root "../datasets/kurgans_dataset" \
+  --out-dir "runs/unet_kurgans_Li_only" \
+  --epochs 50 \
+  --batch-size 8 \
+  --lr 1e-3 \
+  --image-size 256 \
+  --split custom_regions \
+  --val-regions "042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА" \
+  --modalities Li \
+  --class-weights "0.2,1.0,3.0"
+```
 
-Причина:
-случайный split в геоданных приводит к утечке terrain patterns
-между train и validation.
+Проверка влияния Dice loss:
 
-Validation выполнялась на отдельных регионах.
+```bash
+python train.py \
+  --data-root "../datasets/kurgans_dataset" \
+  --out-dir "runs/no_dice_all_modalities" \
+  --epochs 50 \
+  --batch-size 8 \
+  --lr 1e-3 \
+  --image-size 256 \
+  --split custom_regions \
+  --val-regions "042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА" \
+  --class-weights "0.2,1.0,3.0" \
+  --dice-weight 0
+```
 
-## Основные сложности
+Для `custom_regions` скрипт проверяет, что список `--val-regions` не пустой, все регионы есть в `metadata.csv`, а train/val split не оказался пустым. В начале запуска он печатает найденные validation regions и количество samples по `region/modality`.
 
-В ходе экспериментов были обнаружены:
+## План экспериментов
 
-    1. Class imbalance
-    Whole/damaged представлены неравномерно.
+| Эксперимент | Модальности | Loss | Class weights | Цель |
+|---|---|---|---|---|
+| baseline_all | Li,Ae,SpOr | CE + Dice | 0.2,1.0,3.0 | Общая модель |
+| li_only | Li | CE + Dice | 0.2,1.0,3.0 | Проверить LiDAR |
+| ae_only | Ae | CE + Dice | 0.2,1.0,3.0 | Проверить аэрофото |
+| spor_only | SpOr | CE + Dice | 0.2,1.0,3.0 | Проверить спутник |
+| no_dice | Li,Ae,SpOr | CE | 0.2,1.0,3.0 | Проверить влияние Dice |
+| image_128 | Li,Ae,SpOr | CE + Dice | 0.2,1.0,3.0 | Проверить размер input |
 
-    2. Blob predictions
-    Модель формировала размытые probability blobs.
+## Что сохраняется
 
-    3. Object merging
-    Соседние объекты часто сливались.
+В `--out-dir` сохраняются:
 
-    4. Early overfitting
-    Лучшие результаты достигались на ранних эпохах обучения.
+- `best_model.pth` - лучший чекпойнт по `val_mean_fg_iou`;
+- `history.csv` - loss и метрики по эпохам отдельно для train/val;
+- `config.json` - параметры запуска и краткое описание split;
+- `train_split.csv`, `val_split.csv` - использованные выборки;
+- `prediction_examples.png` - несколько примеров image / GT / prediction / overlay.
 
-## Результаты
+В `history.csv` есть общие метрики и срезы по модальностям, например:
 
-Лучший результат multiclass baseline:
+- `train_loss`, `val_loss`;
+- `train_fg_iou`, `val_fg_iou`;
+- `train_mean_fg_iou`, `val_mean_fg_iou`;
+- `val_iou_whole_kurgan`, `val_iou_damaged_kurgan`;
+- `val_Li_fg_iou`, `val_Ae_fg_iou`, `val_SpOr_fg_iou`, если такие модальности есть в split.
 
-- mean foreground IoU: ~0.48
-- whole IoU: ~0.47
-- damaged IoU: ~0.21
+## Оценка чекпойнта
 
-Наблюдение:
+```bash
+python evaluate.py \
+  --data-root "../datasets/kurgans_dataset" \
+  --checkpoint "runs/baseline_all_modalities_ce_dice/best_model.pth" \
+  --out-dir "runs/baseline_all_modalities_ce_dice" \
+  --split custom_regions \
+  --val-regions "042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА" \
+  --class-weights "0.2,1.0,3.0"
+```
 
-модель значительно лучше различает целые курганы,
-чем повреждённые.
+Результат печатается в stdout и дополнительно сохраняется в `evaluation.csv` и `evaluation.json`, если указан `--out-dir`.
 
-## Интерпретация
+## Визуализация предсказаний
 
-Полученные результаты показывают, что задача semantic separation
-между whole/damaged существенно сложнее, чем простая
-foreground localization.
+```bash
+python visualize_predictions.py \
+  --data-root "../datasets/kurgans_dataset" \
+  --checkpoint "runs/baseline_all_modalities_ce_dice/best_model.pth" \
+  --output "runs/baseline_all_modalities_ce_dice/prediction_examples_eval.png" \
+  --split custom_regions \
+  --val-regions "042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА"
+```
 
-Модель сначала учится отвечать на вопрос:
+## Запуск на Kaggle
 
-"где находится археологический объект", и только затем
-"какого он типа".
+1. Включить Internet в настройках Kaggle notebook, чтобы notebook мог клонировать репозиторий через GitHub.
+2. Загрузить `kurgans_dataset` как отдельный Kaggle Dataset с путем `/kaggle/input/kurgans-dataset/kurgans_dataset`.
+3. Включить GPU в настройках notebook.
+4. Запустить [notebooks/kurgans_unet_kaggle.ipynb](../notebooks/kurgans_unet_kaggle.ipynb).
+5. После выполнения скачать `/kaggle/working/kurgans_runs.zip`.
 
-## Примеры предсказаний (baseline vs final version)
+Внутри Kaggle notebook репозиторий клонируется или обновляется в `/kaggle/working/Geodata_Archaeology_CV`, а эксперименты запускаются через:
 
-<p align="center">
-    <img src="assets/val_pred_before_1.png" width="700">
-    <img src="assets/val_pred_after_1.png" width="700">
-    <img src="assets/val_perd_before_2.png" width="700">
-    <img src="assets/val_pred_after_2.png" width="700">
-</p>
+```bash
+bash run_kaggle_experiments.sh
+```
+
+Скрипт принимает переменные окружения:
+
+- `REPO_URL` - URL репозитория для Kaggle notebook, по умолчанию `https://github.com/MataNerdy/Geodata_Archaeology_CV.git`;
+- `BRANCH` - ветка репозитория для Kaggle notebook, по умолчанию `main`;
+- `DATA_ROOT` - путь к датасету, по умолчанию `/kaggle/input/kurgans-dataset/kurgans_dataset`;
+- `RUN_ROOT` - путь для результатов, по умолчанию `/kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs`;
+- `PYTHON_BIN` - Python executable, по умолчанию `python`.
+
+`run_kaggle_experiments.sh` печатает версии Python/PyTorch, проверяет CUDA, запускает smoke test, затем baseline, `evaluate.py` и `visualize_predictions.py`. Логи сохраняются в `RUN_ROOT/logs`.
+
+## Следующие эксперименты
+
+1. Сравнить несколько наборов validation regions и `val_mean_fg_iou`.
+2. Отдельные модели по модальностям `Li`, `Ae`, `SpOr` и общая модель на всех модальностях.
+3. Сравнение `image-size 128` и `image-size 256`.
+4. Подбор `--class-weights` для поврежденных курганов.
+5. Сравнение `CrossEntropy + Dice` с чистым `CrossEntropy` через `--dice-weight 0`.
