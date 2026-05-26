@@ -2,6 +2,7 @@
 set -euo pipefail
 
 DATA_ROOT="${DATA_ROOT:-/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset}"
+CHECKPOINT_ROOT="${CHECKPOINT_ROOT:-/kaggle/input/datasets/matanerdy/kurgans-dataset}"
 RUN_ROOT="${RUN_ROOT:-/kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
 EPOCHS="${EPOCHS:-50}"
@@ -18,6 +19,7 @@ THRESHOLDS="${THRESHOLDS:-0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55
 mkdir -p "$LOG_DIR"
 
 echo "DATA_ROOT=$DATA_ROOT"
+echo "CHECKPOINT_ROOT=$CHECKPOINT_ROOT"
 echo "RUN_ROOT=$RUN_ROOT"
 echo "PYTHON_BIN=$PYTHON_BIN"
 echo "EPOCHS=$EPOCHS"
@@ -159,17 +161,24 @@ run_threshold_sweep() {
   local val_regions="$5"
   local out_dir="$RUN_ROOT/$name"
   local log_prefix="$LOG_DIR/$name"
+  local checkpoint="$out_dir/best_model.pth"
 
-  if [[ ! -f "$out_dir/best_model.pth" ]]; then
-    echo "[SKIP] checkpoint not found: $out_dir/best_model.pth"
+  if [[ ! -f "$checkpoint" ]]; then
+    checkpoint="$CHECKPOINT_ROOT/$name.pth"
+  fi
+
+  if [[ ! -f "$checkpoint" ]]; then
+    echo "[SKIP] checkpoint not found: $out_dir/best_model.pth or $CHECKPOINT_ROOT/$name.pth"
     return 0
   fi
+
+  mkdir -p "$out_dir"
 
   echo "Running threshold sweep: $name"
   local sweep_cmd=(
     "$PYTHON_BIN" -u threshold_sweep.py
     --data-root "$DATA_ROOT"
-    --checkpoint "$out_dir/best_model.pth"
+    --checkpoint "$checkpoint"
     --out-dir "$out_dir"
     --task binary
     --image-size "$image_size"
@@ -200,7 +209,7 @@ PY
     "$PYTHON_BIN" -u visualize_predictions.py
     --task binary
     --data-root "$DATA_ROOT"
-    --checkpoint "$out_dir/best_model.pth"
+    --checkpoint "$checkpoint"
     --output "$out_dir/prediction_examples_thr_best.png"
     --image-size "$image_size"
     --batch-size "$batch_size"

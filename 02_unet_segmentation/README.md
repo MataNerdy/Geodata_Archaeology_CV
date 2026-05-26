@@ -224,6 +224,24 @@ python visualize_predictions.py \
 bash run_kaggle_experiments.sh threshold_sweeps
 ```
 
+В этом режиме скрипт ищет checkpoint в двух местах:
+
+- сначала `RUN_ROOT/<experiment>/best_model.pth`;
+- затем `CHECKPOINT_ROOT/<experiment>.pth`.
+
+Для сохранённых Kaggle input-моделей можно задать:
+
+```bash
+CHECKPOINT_ROOT="/kaggle/input/datasets/matanerdy/kurgans-dataset" \
+bash run_kaggle_experiments.sh threshold_sweeps
+```
+
+Например, `binary_li_512_no_dice` будет найден как:
+
+```text
+/kaggle/input/datasets/matanerdy/kurgans-dataset/binary_li_512_no_dice.pth
+```
+
 Этот режим проверяет:
 
 - `binary_li_no_dice`;
@@ -321,6 +339,7 @@ bash run_kaggle_experiments.sh
 - `REPO_URL` - URL репозитория для Kaggle notebook, по умолчанию `https://github.com/MataNerdy/Geodata_Archaeology_CV.git`;
 - `BRANCH` - ветка репозитория для Kaggle notebook, по умолчанию `main`;
 - `DATA_ROOT` - путь к датасету, по умолчанию `/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset`;
+- `CHECKPOINT_ROOT` - путь к сохранённым `.pth` чекпойнтам для threshold sweep, по умолчанию `/kaggle/input/datasets/matanerdy/kurgans-dataset`;
 - `RUN_ROOT` - путь для результатов, по умолчанию `/kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs`;
 - `PYTHON_BIN` - Python executable, по умолчанию `python`.
 
