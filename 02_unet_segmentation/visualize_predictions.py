@@ -33,6 +33,7 @@ def save_prediction_grid(
     device: torch.device,
     save_path: str | Path,
     max_samples: int = 6,
+    task: str = "multiclass",
 ) -> None:
     """Run the model on one loader batch and save image/GT/prediction panels."""
 
@@ -45,7 +46,7 @@ def save_prediction_grid(
     modalities = batch["modality"]
 
     with torch.no_grad():
-        preds = model(images).argmax(dim=1).cpu()
+        preds = _logits_to_predictions(model(images), task).cpu()
 
     n_samples = min(max_samples, images.shape[0])
     fig, axes = plt.subplots(n_samples, 4, figsize=(14, 3.4 * n_samples))
@@ -78,11 +79,16 @@ def save_prediction_grid(
     plt.close(fig)
 
 
-def load_checkpoint_model(checkpoint_path: str | Path, device: torch.device) -> torch.nn.Module:
+def load_checkpoint_model(
+    checkpoint_path: str | Path,
+    device: torch.device,
+    task: str = "multiclass",
+) -> torch.nn.Module:
     """Load a UNetSmall model from a training checkpoint."""
 
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    model = build_model("unet_small", in_channels=1, num_classes=3).to(device)
+    num_outputs = 1 if task == "binary" else 3
+    model = build_model("unet_small", in_channels=1, num_classes=num_outputs).to(device)
     state = checkpoint.get("model_state_dict", checkpoint)
     model.load_state_dict(state)
     return model
@@ -97,6 +103,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", default="prediction_examples.png")
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--task", choices=["binary", "multiclass"], default="multiclass")
     parser.add_argument(
         "--split",
         choices=["region", "custom_regions", "random"],
@@ -114,6 +121,7 @@ def main() -> None:
     """CLI entry point."""
 
     args = parse_args()
+    args.modalities = normalize_modalities(args.modalities)
     device = torch.device(
         "cuda"
         if torch.cuda.is_available()
@@ -129,10 +137,15 @@ def main() -> None:
         val_fraction=args.val_fraction,
         modalities=args.modalities,
     )
-    dataset = KurganSegmentationDataset(val_df, args.data_root, args.image_size)
+    dataset = KurganSegmentationDataset(
+        val_df,
+        args.data_root,
+        args.image_size,
+        task=args.task,
+    )
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
-    model = load_checkpoint_model(args.checkpoint, device)
-    save_prediction_grid(model, loader, device, args.output, args.max_samples)
+    model = load_checkpoint_model(args.checkpoint, device, task=args.task)
+    save_prediction_grid(model, loader, device, args.output, args.max_samples, task=args.task)
     print(f"Saved predictions to {args.output}")
 
 
@@ -150,6 +163,21 @@ def parse_val_regions(value: str | None) -> list[str] | None:
     if not regions:
         raise ValueError("--val-regions must contain at least one region")
     return regions
+
+
+def normalize_modalities(values: list[str] | None) -> list[str] | None:
+    if not values:
+        return None
+    modalities: list[str] = []
+    for value in values:
+        modalities.extend(item.strip() for item in value.split(",") if item.strip())
+    return modalities or None
+
+
+def _logits_to_predictions(logits: torch.Tensor, task: str) -> torch.Tensor:
+    if task == "binary":
+        return (torch.sigmoid(logits[:, 0]) > 0.5).long()
+    return logits.argmax(dim=1)
 
 
 def _colorize(mask: np.ndarray) -> np.ndarray:

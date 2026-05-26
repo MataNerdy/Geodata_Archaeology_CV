@@ -203,11 +203,15 @@ class KurganSegmentationDataset(Dataset):
         data_root: str | Path,
         image_size: int = 256,
         normalize: str = "zscore",
+        task: str = "multiclass",
     ) -> None:
+        if task not in {"multiclass", "binary"}:
+            raise ValueError("task must be 'multiclass' or 'binary'")
         self.meta = meta.reset_index(drop=True).copy()
         _, self.images_dir, self.masks_dir = validate_data_root(data_root)
         self.image_size = image_size
         self.normalize = normalize
+        self.task = task
 
     def __len__(self) -> int:
         return len(self.meta)
@@ -271,6 +275,8 @@ class KurganSegmentationDataset(Dataset):
             mask = self._resize_mask(mask)
 
         mask = remap_to_kurgan_classes(mask)
+        if self.task == "binary":
+            mask = (mask > 0).astype(np.int64)
 
         image = self._normalize(image)
         return {

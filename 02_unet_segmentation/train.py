@@ -14,8 +14,9 @@ from torch.utils.data import DataLoader
 
 from config import TrainConfig
 from dataset import KurganSegmentationDataset, load_metadata, make_experiment_split
-from losses import CombinedLoss
+from losses import CombinedBinaryLoss, CombinedLoss
 from metrics import (
+    binary_metrics_from_confusion,
     confusion_matrix,
     flatten_modality_metrics,
     metrics_from_confusion,
@@ -37,6 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=defaults.lr)
     parser.add_argument("--weight-decay", type=float, default=defaults.weight_decay)
     parser.add_argument("--image-size", type=int, default=defaults.image_size)
+    parser.add_argument("--task", choices=["binary", "multiclass"], default="multiclass")
     parser.add_argument(
         "--split",
         choices=["region", "custom_regions", "random"],
@@ -50,7 +52,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--val-fraction", type=float, default=defaults.val_fraction)
     parser.add_argument("--modalities", nargs="*", help="Optional modality filter: Li Ae SpOr")
     parser.add_argument("--ce-weight", type=float, default=defaults.ce_weight)
+    parser.add_argument("--bce-weight", type=float, default=1.0)
     parser.add_argument("--dice-weight", type=float, default=defaults.dice_weight)
+    parser.add_argument("--pos-weight", type=float)
     parser.add_argument(
         "--class-weights",
         help="Comma-separated CE class weights, for example: 0.2,1.0,3.0",
@@ -65,17 +69,19 @@ def parse_args() -> argparse.Namespace:
 def train_one_epoch(
     model: torch.nn.Module,
     loader: DataLoader,
-    criterion: CombinedLoss,
+    criterion: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
-    num_classes: int = 3,
+    task: str = "multiclass",
 ) -> dict[str, float]:
     """Train for one epoch and return aggregate metrics."""
 
     model.train()
     total_loss = 0.0
     total_ce = 0.0
+    total_bce = 0.0
     total_dice_loss = 0.0
+    num_classes = 2 if task == "binary" else 3
     matrix = torch.zeros((num_classes, num_classes), dtype=torch.int64)
     modality_confusions: dict[str, torch.Tensor] = {}
 
@@ -90,7 +96,7 @@ def train_one_epoch(
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
-        preds = logits.detach().argmax(dim=1).cpu()
+        preds = logits_to_predictions(logits.detach(), task).cpu()
         targets = masks.detach().cpu()
         matrix += confusion_matrix(preds, targets, num_classes)
         update_modality_confusions(
@@ -102,17 +108,22 @@ def train_one_epoch(
         )
 
         total_loss += float(loss.detach().cpu())
-        total_ce += loss_parts["ce_loss"]
+        total_ce += loss_parts.get("ce_loss", 0.0)
+        total_bce += loss_parts.get("bce_loss", 0.0)
         total_dice_loss += loss_parts["dice_loss"]
 
     n_batches = max(len(loader), 1)
     metrics = {
         "train_loss": total_loss / n_batches,
         "train_ce_loss": total_ce / n_batches,
+        "train_bce_loss": total_bce / n_batches,
         "train_dice_loss": total_dice_loss / n_batches,
     }
-    metrics.update(metrics_from_confusion(matrix, prefix="train_"))
-    metrics.update(flatten_modality_metrics(modality_confusions, split="train"))
+    if task == "binary":
+        metrics.update(binary_metrics_from_confusion(matrix, prefix="train_"))
+    else:
+        metrics.update(metrics_from_confusion(matrix, prefix="train_"))
+    metrics.update(flatten_modality_metrics(modality_confusions, split="train", task=task))
     return metrics
 
 
@@ -120,17 +131,19 @@ def train_one_epoch(
 def evaluate_loader(
     model: torch.nn.Module,
     loader: DataLoader,
-    criterion: CombinedLoss,
+    criterion: torch.nn.Module,
     device: torch.device,
     split_name: str = "val",
-    num_classes: int = 3,
+    task: str = "multiclass",
 ) -> dict[str, float]:
     """Evaluate a model on a loader and return aggregate metrics."""
 
     model.eval()
     total_loss = 0.0
     total_ce = 0.0
+    total_bce = 0.0
     total_dice_loss = 0.0
+    num_classes = 2 if task == "binary" else 3
     matrix = torch.zeros((num_classes, num_classes), dtype=torch.int64)
     modality_confusions: dict[str, torch.Tensor] = {}
 
@@ -140,7 +153,7 @@ def evaluate_loader(
         logits = model(images)
         loss, loss_parts = criterion(logits, masks)
 
-        preds = logits.argmax(dim=1).cpu()
+        preds = logits_to_predictions(logits, task).cpu()
         targets = masks.cpu()
         matrix += confusion_matrix(preds, targets, num_classes)
         update_modality_confusions(
@@ -152,17 +165,22 @@ def evaluate_loader(
         )
 
         total_loss += float(loss.cpu())
-        total_ce += loss_parts["ce_loss"]
+        total_ce += loss_parts.get("ce_loss", 0.0)
+        total_bce += loss_parts.get("bce_loss", 0.0)
         total_dice_loss += loss_parts["dice_loss"]
 
     n_batches = max(len(loader), 1)
     metrics = {
         f"{split_name}_loss": total_loss / n_batches,
         f"{split_name}_ce_loss": total_ce / n_batches,
+        f"{split_name}_bce_loss": total_bce / n_batches,
         f"{split_name}_dice_loss": total_dice_loss / n_batches,
     }
-    metrics.update(metrics_from_confusion(matrix, prefix=f"{split_name}_"))
-    metrics.update(flatten_modality_metrics(modality_confusions, split=split_name))
+    if task == "binary":
+        metrics.update(binary_metrics_from_confusion(matrix, prefix=f"{split_name}_"))
+    else:
+        metrics.update(metrics_from_confusion(matrix, prefix=f"{split_name}_"))
+    metrics.update(flatten_modality_metrics(modality_confusions, split=split_name, task=task))
     return metrics
 
 
@@ -170,6 +188,8 @@ def main() -> None:
     """Run the training experiment."""
 
     args = parse_args()
+    args.modalities = normalize_modalities(args.modalities)
+    validate_task_args(args)
     set_seed(args.seed)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -187,8 +207,18 @@ def main() -> None:
     train_df.to_csv(out_dir / "train_split.csv", index=False)
     val_df.to_csv(out_dir / "val_split.csv", index=False)
 
-    train_dataset = KurganSegmentationDataset(train_df, args.data_root, args.image_size)
-    val_dataset = KurganSegmentationDataset(val_df, args.data_root, args.image_size)
+    train_dataset = KurganSegmentationDataset(
+        train_df,
+        args.data_root,
+        args.image_size,
+        task=args.task,
+    )
+    val_dataset = KurganSegmentationDataset(
+        val_df,
+        args.data_root,
+        args.image_size,
+        task=args.task,
+    )
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
@@ -205,13 +235,9 @@ def main() -> None:
     )
 
     device = get_device()
-    model = build_model("unet_small", in_channels=1, num_classes=3).to(device)
-    criterion = CombinedLoss(
-        num_classes=3,
-        ce_weight=args.ce_weight,
-        dice_weight=args.dice_weight,
-        class_weights=parse_class_weights(args.class_weights),
-    ).to(device)
+    num_outputs = 1 if args.task == "binary" else 3
+    model = build_model("unet_small", in_channels=1, num_classes=num_outputs).to(device)
+    criterion = build_criterion(args).to(device)
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=args.lr,
@@ -236,22 +262,36 @@ def main() -> None:
         print_custom_region_summary(val_df)
 
     for epoch in range(1, args.epochs + 1):
-        train_metrics = train_one_epoch(model, train_loader, criterion, optimizer, device)
-        val_metrics = evaluate_loader(model, val_loader, criterion, device, split_name="val")
+        train_metrics = train_one_epoch(
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            device,
+            task=args.task,
+        )
+        val_metrics = evaluate_loader(
+            model,
+            val_loader,
+            criterion,
+            device,
+            split_name="val",
+            task=args.task,
+        )
         lr = optimizer.param_groups[0]["lr"]
 
         row = {"epoch": epoch, "lr": lr, **train_metrics, **val_metrics}
         history.append(row)
         pd.DataFrame(history).to_csv(out_dir / "history.csv", index=False)
 
-        score = val_metrics["val_mean_fg_iou"]
+        score = get_selection_score(val_metrics, args.task)
         scheduler.step(score)
         print(
             f"Epoch {epoch:03d}/{args.epochs} | "
             f"train_loss={train_metrics['train_loss']:.4f} | "
             f"val_loss={val_metrics['val_loss']:.4f} | "
             f"val_fg_iou={val_metrics['val_fg_iou']:.4f} | "
-            f"val_mean_fg_iou={score:.4f}"
+            f"selection_score={score:.4f}"
         )
 
         if score > best_score:
@@ -262,7 +302,8 @@ def main() -> None:
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
-                "best_val_mean_fg_iou": best_score,
+                "best_score": best_score,
+                "task": args.task,
                 "args": vars(args),
             }
             torch.save(checkpoint, out_dir / "best_model.pth")
@@ -272,6 +313,7 @@ def main() -> None:
                 device,
                 out_dir / "prediction_examples.png",
                 max_samples=args.save_samples,
+                task=args.task,
             )
             print(f"Saved new best model: {out_dir / 'best_model.pth'}")
         else:
@@ -281,7 +323,49 @@ def main() -> None:
             print(f"Early stopping after {epoch} epochs")
             break
 
-    print(f"Best epoch: {best_epoch} | best val mean foreground IoU: {best_score:.4f}")
+    print(f"Best epoch: {best_epoch} | best validation score: {best_score:.4f}")
+
+
+def build_criterion(args: argparse.Namespace) -> torch.nn.Module:
+    """Build a loss function for the selected task."""
+
+    if args.task == "binary":
+        return CombinedBinaryLoss(
+            bce_weight=args.bce_weight,
+            dice_weight=args.dice_weight,
+            pos_weight=args.pos_weight,
+        )
+    return CombinedLoss(
+        num_classes=3,
+        ce_weight=args.ce_weight,
+        dice_weight=args.dice_weight,
+        class_weights=parse_class_weights(args.class_weights),
+    )
+
+
+def logits_to_predictions(logits: torch.Tensor, task: str) -> torch.Tensor:
+    """Convert model logits to integer masks for metric computation."""
+
+    if task == "binary":
+        return (torch.sigmoid(logits[:, 0]) > 0.5).long()
+    return logits.argmax(dim=1)
+
+
+def get_selection_score(metrics: dict[str, float], task: str) -> float:
+    """Return the metric used to select best_model.pth."""
+
+    if task == "binary":
+        return metrics["val_fg_iou"]
+    return metrics["val_mean_fg_iou"]
+
+
+def validate_task_args(args: argparse.Namespace) -> None:
+    """Reject loss arguments that do not apply to the selected task."""
+
+    if args.task == "binary" and args.class_weights:
+        raise ValueError("--class-weights is only used for --task multiclass")
+    if args.task == "multiclass" and args.pos_weight is not None:
+        raise ValueError("--pos-weight is only used for --task binary")
 
 
 def parse_class_weights(value: str | None) -> list[float] | None:
@@ -304,6 +388,17 @@ def parse_val_regions(value: str | None) -> list[str] | None:
     if not regions:
         raise ValueError("--val-regions must contain at least one region")
     return regions
+
+
+def normalize_modalities(values: list[str] | None) -> list[str] | None:
+    """Support both '--modalities Li Ae' and '--modalities Li,Ae'."""
+
+    if not values:
+        return None
+    modalities: list[str] = []
+    for value in values:
+        modalities.extend(item.strip() for item in value.split(",") if item.strip())
+    return modalities or None
 
 
 def print_custom_region_summary(val_df: pd.DataFrame) -> None:

@@ -39,7 +39,7 @@
 python -c "import numpy, pandas, torch, matplotlib; print('env ok')"
 ```
 
-## Обучение
+## Multiclass Experiments
 
 Минимальный smoke test перед обучением:
 
@@ -87,23 +87,6 @@ python train.py \
   --class-weights "0.2,1.0,3.0"
 ```
 
-Проверка влияния Dice loss:
-
-```bash
-python train.py \
-  --data-root "../datasets/segmentation_dataset" \
-  --out-dir "runs/no_dice_all_modalities" \
-  --epochs 50 \
-  --batch-size 8 \
-  --lr 1e-3 \
-  --image-size 256 \
-  --split custom_regions \
-  --val-regions "042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА" \
-  --modalities Li Ae SpOr \
-  --class-weights "0.2,1.0,3.0" \
-  --dice-weight 0
-```
-
 Baseline с early stopping на 12 эпох без улучшения:
 
 ```bash
@@ -112,24 +95,92 @@ bash run_early_stopping_experiment.sh
 
 Для `custom_regions` скрипт проверяет, что список `--val-regions` не пустой, все регионы есть в `metadata.csv`, а train/val split не оказался пустым. В начале запуска он печатает найденные validation regions и количество samples по `region/modality`.
 
-## План экспериментов
+## Binary Experiments
+
+В binary режиме маска становится:
+
+- `0` - background;
+- `1` - any kurgan, то есть `mask > 0` после ремапа исходных классов в `0/1/2`.
+
+Binary loss: `BCEWithLogitsLoss + DiceLossBinary`. Для него используются `--pos-weight`, `--bce-weight`, `--dice-weight`; `--class-weights` не нужен.
+
+Пример Li-only binary:
+
+```bash
+python train.py \
+  --task binary \
+  --data-root "../datasets/segmentation_dataset" \
+  --out-dir "runs/binary_li_only" \
+  --epochs 50 \
+  --patience 12 \
+  --batch-size 8 \
+  --lr 1e-3 \
+  --image-size 256 \
+  --split custom_regions \
+  --val-regions "007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км" \
+  --modalities Li \
+  --pos-weight 2.0 \
+  --bce-weight 1.0 \
+  --dice-weight 1.0
+```
+
+Binary Li+Ae:
+
+```bash
+python train.py \
+  --task binary \
+  --data-root "../datasets/segmentation_dataset" \
+  --out-dir "runs/binary_li_ae_only" \
+  --epochs 50 \
+  --patience 12 \
+  --batch-size 8 \
+  --lr 1e-3 \
+  --image-size 256 \
+  --split custom_regions \
+  --val-regions "007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км" \
+  --modalities Li,Ae \
+  --pos-weight 2.0 \
+  --bce-weight 1.0 \
+  --dice-weight 1.0
+```
+
+Binary evaluation:
+
+```bash
+python evaluate.py \
+  --task binary \
+  --data-root "../datasets/segmentation_dataset" \
+  --checkpoint "runs/binary_li_only/best_model.pth" \
+  --out-dir "runs/binary_li_only" \
+  --split custom_regions \
+  --val-regions "007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км" \
+  --modalities Li \
+  --pos-weight 2.0
+```
+
+## План Экспериментов
 
 | Эксперимент | Модальности | Loss | Class weights | Цель |
 |---|---|---|---|---|
 | baseline_all | Li,Ae,SpOr | CE + Dice | 0.2,1.0,3.0 | Общая модель |
-| li_only | Li | CE + Dice | 0.2,1.0,3.0 | Проверить LiDAR |
-| ae_only | Ae | CE + Dice | 0.2,1.0,3.0 | Проверить аэрофото |
-| li_ae_only | Li,Ae | CE + Dice | 0.2,1.0,3.0 | Проверить связку LiDAR + аэрофото |
-| spor_only_diagnostic | SpOr | CE + Dice | 0.2,1.0,3.0 | Диагностически проверить спутник |
-| no_dice | Li,Ae,SpOr | CE | 0.2,1.0,3.0 | Проверить влияние Dice |
 | image_128 | Li,Ae,SpOr | CE + Dice | 0.2,1.0,3.0 | Проверить размер input |
-| lower_damaged_weight | Li,Ae,SpOr | CE + Dice | 0.2,1.0,2.0 | Проверить меньший вес damaged |
+
+Binary-план:
+
+| Эксперимент | Модальности | Loss | Pos weight | Цель |
+|---|---|---|---|---|
+| binary_li_only | Li | BCE + Dice | 2.0 | Найти любой курган на LiDAR |
+| binary_li_ae_only | Li,Ae | BCE + Dice | 2.0 | Проверить связку LiDAR + аэрофото |
+| binary_all_modalities | Li,Ae,SpOr | BCE + Dice | 2.0 | Общая binary модель |
+| binary_li_no_dice | Li | BCE | 2.0 | Проверить влияние Dice |
+| binary_li_pos_weight_2 | Li | BCE + Dice | 2.0 | Базовый вес foreground |
+| binary_li_pos_weight_4 | Li | BCE + Dice | 4.0 | Усилить foreground |
 
 ## Что сохраняется
 
 В `--out-dir` сохраняются:
 
-- `best_model.pth` - лучший чекпойнт по `val_mean_fg_iou`;
+- `best_model.pth` - лучший чекпойнт по `val_mean_fg_iou` для multiclass и по `val_fg_iou` для binary;
 - `history.csv` - loss и метрики по эпохам отдельно для train/val;
 - `config.json` - параметры запуска и краткое описание split;
 - `train_split.csv`, `val_split.csv` - использованные выборки;
@@ -142,6 +193,11 @@ bash run_early_stopping_experiment.sh
 - `train_mean_fg_iou`, `val_mean_fg_iou`;
 - `val_iou_whole_kurgan`, `val_iou_damaged_kurgan`;
 - `val_Li_fg_iou`, `val_Ae_fg_iou`, `val_SpOr_fg_iou`, если такие модальности есть в split.
+
+Как читать метрики:
+
+- multiclass: основная метрика `val_mean_fg_iou`, это среднее IoU по `whole_kurgan` и `damaged_kurgan`; дополнительно смотреть `val_iou_whole_kurgan` и `val_iou_damaged_kurgan`;
+- binary: основная метрика `val_fg_iou`, это IoU foreground для любого кургана; дополнительно смотреть `val_fg_dice` и `val_pixel_accuracy`.
 
 ## Оценка чекпойнта
 
@@ -192,24 +248,21 @@ bash run_kaggle_experiments.sh
 - `RUN_ROOT` - путь для результатов, по умолчанию `/kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs`;
 - `PYTHON_BIN` - Python executable, по умолчанию `python`.
 
-`run_kaggle_experiments.sh` печатает версии Python/PyTorch, проверяет CUDA, запускает smoke test, затем baseline, `evaluate.py` и `visualize_predictions.py`. Логи сохраняются в `RUN_ROOT/logs`.
+`run_kaggle_experiments.sh` печатает версии Python/PyTorch, проверяет CUDA, запускает smoke test, затем вторую серию binary-экспериментов. Логи сохраняются в `RUN_ROOT/logs`.
 
-Kaggle-скрипт запускает все основные эксперименты с early stopping `--patience 12`:
+Kaggle-скрипт сейчас запускает вторую серию с early stopping `--patience 12`:
 
-- `baseline_all_modalities_ce_dice`
-- `li_only`
-- `ae_only`
-- `li_ae_only`
-- `spor_only_diagnostic`
-- `no_dice`
-- `lower_damaged_weight`
+- `binary_li_only`
+- `binary_li_ae_only`
+- `binary_all_modalities`
+- `binary_li_no_dice`
+- `binary_li_pos_weight_2`
+- `binary_li_pos_weight_4`
 
-После каждого обучения запускается `evaluate.py`; все `evaluation.json` собираются в `RUN_ROOT/experiments_summary.csv`.
+После каждого обучения запускается `evaluate.py`; все `evaluation.json` под `RUN_ROOT`, включая сохранённые результаты первой серии, собираются в `RUN_ROOT/experiments_summary.csv`.
 
 ## Следующие эксперименты
 
-1. Сравнить несколько наборов validation regions и `val_mean_fg_iou`.
-2. Отдельные модели по модальностям `Li`, `Ae`, `SpOr` и общая модель на всех модальностях.
-3. Сравнение `image-size 128` и `image-size 256`.
-4. Подбор `--class-weights` для поврежденных курганов.
-5. Сравнение `CrossEntropy + Dice` с чистым `CrossEntropy` через `--dice-weight 0`.
+1. Сравнить несколько наборов validation regions для binary mode.
+2. Проверить `image-size 128` для лучшего binary-направления.
+3. Подобрать threshold для binary inference вместо фиксированного `0.5`.

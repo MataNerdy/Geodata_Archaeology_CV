@@ -15,6 +15,7 @@ echo "OUT_DIR=$OUT_DIR"
 echo "PATIENCE=$PATIENCE"
 
 "$PYTHON_BIN" -u train.py \
+  --task multiclass \
   --data-root "$DATA_ROOT" \
   --out-dir "$OUT_DIR" \
   --epochs 50 \
@@ -29,6 +30,7 @@ echo "PATIENCE=$PATIENCE"
   2>&1 | tee "$RUN_ROOT/logs/baseline_all_modalities_ce_dice_early_stop.train.log"
 
 "$PYTHON_BIN" -u evaluate.py \
+  --task multiclass \
   --data-root "$DATA_ROOT" \
   --checkpoint "$OUT_DIR/best_model.pth" \
   --out-dir "$OUT_DIR" \
@@ -41,6 +43,7 @@ echo "PATIENCE=$PATIENCE"
   2>&1 | tee "$RUN_ROOT/logs/baseline_all_modalities_ce_dice_early_stop.evaluate.log"
 
 "$PYTHON_BIN" -u visualize_predictions.py \
+  --task multiclass \
   --data-root "$DATA_ROOT" \
   --checkpoint "$OUT_DIR/best_model.pth" \
   --output "$OUT_DIR/prediction_examples_eval.png" \

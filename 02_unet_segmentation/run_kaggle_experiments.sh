@@ -11,6 +11,7 @@ export RUN_ROOT
 
 SMOKE_VAL_REGIONS="042_ИЗБОРСК"
 BASELINE_VAL_REGIONS="042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА"
+BINARY_VAL_REGIONS="007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км"
 
 mkdir -p "$LOG_DIR"
 
@@ -42,12 +43,15 @@ fi
 
 run_train_eval() {
   local name="$1"
-  local epochs="$2"
-  local batch_size="$3"
-  local class_weights="$4"
-  local dice_weight="$5"
-  local modalities="$6"
-  local val_regions="$7"
+  local task="$2"
+  local epochs="$3"
+  local batch_size="$4"
+  local class_weights="$5"
+  local dice_weight="$6"
+  local modalities="$7"
+  local val_regions="$8"
+  local pos_weight="${9:-}"
+  local bce_weight="${10:-}"
   local out_dir="$RUN_ROOT/$name"
   local log_prefix="$LOG_DIR/$name"
 
@@ -55,6 +59,7 @@ run_train_eval() {
 
   local train_cmd=(
     "$PYTHON_BIN" -u train.py
+    --task "$task"
     --data-root "$DATA_ROOT"
     --out-dir "$out_dir"
     --epochs "$epochs"
@@ -71,6 +76,12 @@ run_train_eval() {
   if [[ -n "$dice_weight" ]]; then
     train_cmd+=(--dice-weight "$dice_weight")
   fi
+  if [[ -n "$pos_weight" ]]; then
+    train_cmd+=(--pos-weight "$pos_weight")
+  fi
+  if [[ -n "$bce_weight" ]]; then
+    train_cmd+=(--bce-weight "$bce_weight")
+  fi
   if [[ -n "$modalities" ]]; then
     read -r -a modality_args <<< "$modalities"
     train_cmd+=(--modalities "${modality_args[@]}")
@@ -79,6 +90,7 @@ run_train_eval() {
 
   local eval_cmd=(
     "$PYTHON_BIN" -u evaluate.py
+    --task "$task"
     --data-root "$DATA_ROOT"
     --checkpoint "$out_dir/best_model.pth"
     --out-dir "$out_dir"
@@ -93,6 +105,12 @@ run_train_eval() {
   if [[ -n "$dice_weight" ]]; then
     eval_cmd+=(--dice-weight "$dice_weight")
   fi
+  if [[ -n "$pos_weight" ]]; then
+    eval_cmd+=(--pos-weight "$pos_weight")
+  fi
+  if [[ -n "$bce_weight" ]]; then
+    eval_cmd+=(--bce-weight "$bce_weight")
+  fi
   if [[ -n "$modalities" ]]; then
     read -r -a modality_args <<< "$modalities"
     eval_cmd+=(--modalities "${modality_args[@]}")
@@ -102,15 +120,17 @@ run_train_eval() {
 
 run_visualization() {
   local name="$1"
-  local batch_size="$2"
-  local modalities="$3"
-  local val_regions="$4"
+  local task="$2"
+  local batch_size="$3"
+  local modalities="$4"
+  local val_regions="$5"
   local out_dir="$RUN_ROOT/$name"
   local log_prefix="$LOG_DIR/$name"
 
   echo "Rendering prediction examples: $name"
   local vis_cmd=(
     "$PYTHON_BIN" -u visualize_predictions.py
+    --task "$task"
     --data-root "$DATA_ROOT"
     --checkpoint "$out_dir/best_model.pth"
     --output "$out_dir/prediction_examples_eval.png"
@@ -141,9 +161,10 @@ def _read_best_epoch(run_dir: Path):
     if not history_path.exists():
         return None
     history = pd.read_csv(history_path)
-    if "val_mean_fg_iou" not in history.columns or history.empty:
+    metric = "val_mean_fg_iou" if "val_mean_fg_iou" in history.columns else "val_fg_iou"
+    if metric not in history.columns or history.empty:
         return None
-    idx = history["val_mean_fg_iou"].idxmax()
+    idx = history[metric].idxmax()
     return int(history.loc[idx, "epoch"])
 
 rows = []
@@ -157,8 +178,11 @@ for path in sorted(run_root.glob("*/evaluation.json")):
         with config_path.open("r", encoding="utf-8") as file:
             config = json.load(file)
         row["epochs_requested"] = config.get("epochs")
+        row["task"] = config.get("task")
         row["modalities"] = ",".join(config.get("modalities") or [])
         row["class_weights"] = config.get("class_weights")
+        row["pos_weight"] = config.get("pos_weight")
+        row["bce_weight"] = config.get("bce_weight")
         row["dice_weight"] = config.get("dice_weight")
         row["best_epoch"] = _read_best_epoch(run_dir)
     rows.append(row)
@@ -167,12 +191,12 @@ def _sort_key(row):
     order = [
         "smoke_test",
         "baseline_all_modalities_ce_dice",
-        "li_only",
-        "ae_only",
-        "li_ae_only",
-        "spor_only_diagnostic",
-        "no_dice",
-        "lower_damaged_weight",
+        "binary_li_only",
+        "binary_li_ae_only",
+        "binary_all_modalities",
+        "binary_li_no_dice",
+        "binary_li_pos_weight_2",
+        "binary_li_pos_weight_4",
     ]
     try:
         return order.index(row["experiment"])
@@ -187,18 +211,16 @@ PY
 }
 
 echo "Running smoke test..."
-run_train_eval "smoke_test" 2 2 "" "" "" "$SMOKE_VAL_REGIONS"
+run_train_eval "smoke_test" "multiclass" 2 2 "" "" "" "$SMOKE_VAL_REGIONS"
 
-echo "Smoke test completed. Running full experiments with early stopping..."
-run_train_eval "baseline_all_modalities_ce_dice" "$EPOCHS" 8 "0.2,1.0,3.0" "" "Li Ae SpOr" "$BASELINE_VAL_REGIONS"
-run_visualization "baseline_all_modalities_ce_dice" 8 "Li Ae SpOr" "$BASELINE_VAL_REGIONS"
+echo "Smoke test completed. Running second-series binary experiments with early stopping..."
 
-run_train_eval "li_only" "$EPOCHS" 8 "0.2,1.0,3.0" "" "Li" "$BASELINE_VAL_REGIONS"
-run_train_eval "ae_only" "$EPOCHS" 8 "0.2,1.0,3.0" "" "Ae" "$BASELINE_VAL_REGIONS"
-run_train_eval "li_ae_only" "$EPOCHS" 8 "0.2,1.0,3.0" "" "Li Ae" "$BASELINE_VAL_REGIONS"
-run_train_eval "spor_only_diagnostic" "$EPOCHS" 8 "0.2,1.0,3.0" "" "SpOr" "$BASELINE_VAL_REGIONS"
-run_train_eval "no_dice" "$EPOCHS" 8 "0.2,1.0,3.0" "0" "Li Ae SpOr" "$BASELINE_VAL_REGIONS"
-run_train_eval "lower_damaged_weight" "$EPOCHS" 8 "0.2,1.0,2.0" "" "Li Ae SpOr" "$BASELINE_VAL_REGIONS"
+run_train_eval "binary_li_only" "binary" "$EPOCHS" 8 "" "1.0" "Li" "$BINARY_VAL_REGIONS" "2.0" "1.0"
+run_train_eval "binary_li_ae_only" "binary" "$EPOCHS" 8 "" "1.0" "Li,Ae" "$BINARY_VAL_REGIONS" "2.0" "1.0"
+run_train_eval "binary_all_modalities" "binary" "$EPOCHS" 8 "" "1.0" "Li Ae SpOr" "$BINARY_VAL_REGIONS" "2.0" "1.0"
+run_train_eval "binary_li_no_dice" "binary" "$EPOCHS" 8 "" "0.0" "Li" "$BINARY_VAL_REGIONS" "2.0" "1.0"
+run_train_eval "binary_li_pos_weight_2" "binary" "$EPOCHS" 8 "" "1.0" "Li" "$BINARY_VAL_REGIONS" "2.0" "1.0"
+run_train_eval "binary_li_pos_weight_4" "binary" "$EPOCHS" 8 "" "1.0" "Li" "$BINARY_VAL_REGIONS" "4.0" "1.0"
 
 build_summary
 

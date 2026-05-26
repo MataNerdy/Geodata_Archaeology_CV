@@ -11,9 +11,15 @@ import torch
 from torch.utils.data import DataLoader
 
 from dataset import KurganSegmentationDataset, load_metadata, make_experiment_split
-from losses import CombinedLoss
 from model import build_model
-from train import evaluate_loader, get_device, parse_class_weights, parse_val_regions
+from train import (
+    build_criterion,
+    evaluate_loader,
+    get_device,
+    normalize_modalities,
+    parse_val_regions,
+    validate_task_args,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -25,6 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", default=None)
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--task", choices=["binary", "multiclass"], default="multiclass")
     parser.add_argument(
         "--split",
         choices=["region", "custom_regions", "random"],
@@ -36,7 +43,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--modalities", nargs="*")
     parser.add_argument("--class-weights")
     parser.add_argument("--ce-weight", type=float, default=1.0)
+    parser.add_argument("--bce-weight", type=float, default=1.0)
     parser.add_argument("--dice-weight", type=float, default=1.0)
+    parser.add_argument("--pos-weight", type=float)
     parser.add_argument("--num-workers", type=int, default=0)
     return parser.parse_args()
 
@@ -45,6 +54,8 @@ def main() -> None:
     """Run checkpoint evaluation."""
 
     args = parse_args()
+    args.modalities = normalize_modalities(args.modalities)
+    validate_task_args(args)
     device = get_device()
     _, val_df = make_experiment_split(
         load_metadata(args.data_root),
@@ -55,7 +66,12 @@ def main() -> None:
         modalities=args.modalities,
     )
 
-    dataset = KurganSegmentationDataset(val_df, args.data_root, args.image_size)
+    dataset = KurganSegmentationDataset(
+        val_df,
+        args.data_root,
+        args.image_size,
+        task=args.task,
+    )
     loader = DataLoader(
         dataset,
         batch_size=args.batch_size,
@@ -64,16 +80,19 @@ def main() -> None:
     )
 
     checkpoint = torch.load(args.checkpoint, map_location=device)
-    model = build_model("unet_small", in_channels=1, num_classes=3).to(device)
+    num_outputs = 1 if args.task == "binary" else 3
+    model = build_model("unet_small", in_channels=1, num_classes=num_outputs).to(device)
     model.load_state_dict(checkpoint.get("model_state_dict", checkpoint))
-    criterion = CombinedLoss(
-        num_classes=3,
-        ce_weight=args.ce_weight,
-        dice_weight=args.dice_weight,
-        class_weights=parse_class_weights(args.class_weights),
-    ).to(device)
+    criterion = build_criterion(args).to(device)
 
-    metrics = evaluate_loader(model, loader, criterion, device, split_name="val")
+    metrics = evaluate_loader(
+        model,
+        loader,
+        criterion,
+        device,
+        split_name="val",
+        task=args.task,
+    )
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
 
     if args.out_dir:

@@ -59,6 +59,25 @@ def metrics_from_confusion(matrix: torch.Tensor, prefix: str = "") -> dict[str, 
     return result
 
 
+def binary_metrics_from_confusion(
+    matrix: torch.Tensor,
+    prefix: str = "",
+) -> dict[str, float]:
+    """Compute foreground IoU, Dice and pixel accuracy for binary segmentation."""
+
+    matrix = matrix.float()
+    tp = matrix[1, 1]
+    tn = matrix[0, 0]
+    fp = matrix[0, 1]
+    fn = matrix[1, 0]
+    result = {
+        f"{prefix}fg_iou": _safe_div(tp, tp + fp + fn),
+        f"{prefix}fg_dice": _safe_div(2.0 * tp, 2.0 * tp + fp + fn),
+        f"{prefix}pixel_accuracy": _safe_div(tp + tn, matrix.sum()),
+    }
+    return result
+
+
 def update_modality_confusions(
     store: dict[str, torch.Tensor],
     preds: torch.Tensor,
@@ -77,12 +96,16 @@ def update_modality_confusions(
 def flatten_modality_metrics(
     modality_confusions: dict[str, torch.Tensor],
     split: str,
+    task: str = "multiclass",
 ) -> dict[str, float]:
     """Convert per-modality confusion matrices to flat CSV-friendly metrics."""
 
     output: dict[str, float] = {}
     for modality, matrix in sorted(modality_confusions.items()):
-        output.update(metrics_from_confusion(matrix, prefix=f"{split}_{modality}_"))
+        if task == "binary":
+            output.update(binary_metrics_from_confusion(matrix, prefix=f"{split}_{modality}_"))
+        else:
+            output.update(metrics_from_confusion(matrix, prefix=f"{split}_{modality}_"))
     return output
 
 
