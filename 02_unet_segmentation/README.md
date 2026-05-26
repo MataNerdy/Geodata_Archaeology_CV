@@ -176,7 +176,63 @@ bash run_kaggle_experiments.sh
 
 После обучения для каждого из этих экспериментов запускаются `evaluate.py` и `visualize_predictions.py`.
 
-`threshold_sweep.py` добавлен как отдельный инструмент на будущее: его стоит запускать вручную только для избранных binary-моделей после сравнения основных результатов. Он перебирает thresholds от `0.05` до `0.95` с шагом `0.05`, сохраняет `threshold_sweep.csv` в папку эксперимента и печатает лучший threshold по `fg_iou`.
+Threshold sweep запускается отдельным шагом после обучения моделей.
+
+## Threshold Sweep
+
+В binary segmentation стандартный threshold `0.5` не обязан быть оптимальным: модель выдаёт probability map, а финальная маска зависит от выбранного порога. Для уже обученных лучших UNet binary-моделей можно подобрать threshold по `fg_iou`.
+
+Пример локального запуска для `binary_li_no_dice`:
+
+```bash
+python threshold_sweep.py \
+  --data-root "../datasets/segmentation_dataset" \
+  --checkpoint "runs/binary_li_no_dice/best_model.pth" \
+  --out-dir "runs/binary_li_no_dice" \
+  --task binary \
+  --image-size 256 \
+  --split custom_regions \
+  --val-regions "007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км" \
+  --modalities Li \
+  --thresholds "0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95"
+```
+
+Скрипт сохраняет в `--out-dir`:
+
+- `threshold_sweep.csv` - метрики по каждому threshold;
+- `threshold_sweep.json` - лучший threshold по `fg_iou`;
+- `threshold_sweep.png` - графики `fg_iou`, `fg_dice`, `precision/recall`.
+
+Для визуальной проверки выбранного threshold:
+
+```bash
+python visualize_predictions.py \
+  --task binary \
+  --data-root "../datasets/segmentation_dataset" \
+  --checkpoint "runs/binary_li_no_dice/best_model.pth" \
+  --output "runs/binary_li_no_dice/prediction_examples_thr_best.png" \
+  --image-size 256 \
+  --split custom_regions \
+  --val-regions "007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км" \
+  --modalities Li \
+  --threshold 0.45
+```
+
+На Kaggle sweep для сохранённых моделей запускается отдельным режимом:
+
+```bash
+bash run_kaggle_experiments.sh threshold_sweeps
+```
+
+Этот режим проверяет:
+
+- `binary_li_no_dice`;
+- `binary_li_pos_weight_2`;
+- `binary_li_pos_weight_4`;
+- `binary_li_only`;
+- `binary_li_512_no_dice`, если checkpoint существует.
+
+Если checkpoint не найден, скрипт печатает `[SKIP] checkpoint not found: ...` и продолжает. После каждого sweep он строит `prediction_examples_thr_best.png`, а в конце собирает `threshold_sweeps_summary.csv`.
 
 ## План Экспериментов
 
@@ -282,4 +338,4 @@ Kaggle-скрипт сейчас запускает третью серию fina
 
 1. Сравнить несколько наборов validation regions для binary mode.
 2. Проверить `image-size 128` для лучшего binary-направления.
-3. Подобрать threshold для binary inference вместо фиксированного `0.5`.
+3. Запустить threshold sweep для избранных binary-моделей и перенести лучший threshold в inference.

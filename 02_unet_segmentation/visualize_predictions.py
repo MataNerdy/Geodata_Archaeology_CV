@@ -34,6 +34,7 @@ def save_prediction_grid(
     save_path: str | Path,
     max_samples: int = 6,
     task: str = "multiclass",
+    threshold: float = 0.5,
 ) -> None:
     """Run the model on one loader batch and save image/GT/prediction panels."""
 
@@ -46,7 +47,7 @@ def save_prediction_grid(
     modalities = batch["modality"]
 
     with torch.no_grad():
-        preds = _logits_to_predictions(model(images), task).cpu()
+        preds = _logits_to_predictions(model(images), task, threshold=threshold).cpu()
 
     n_samples = min(max_samples, images.shape[0])
     fig, axes = plt.subplots(n_samples, 4, figsize=(14, 3.4 * n_samples))
@@ -104,6 +105,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--task", choices=["binary", "multiclass"], default="multiclass")
+    parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument(
         "--split",
         choices=["region", "custom_regions", "random"],
@@ -145,7 +147,15 @@ def main() -> None:
     )
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
     model = load_checkpoint_model(args.checkpoint, device, task=args.task)
-    save_prediction_grid(model, loader, device, args.output, args.max_samples, task=args.task)
+    save_prediction_grid(
+        model,
+        loader,
+        device,
+        args.output,
+        args.max_samples,
+        task=args.task,
+        threshold=args.threshold,
+    )
     print(f"Saved predictions to {args.output}")
 
 
@@ -174,9 +184,13 @@ def normalize_modalities(values: list[str] | None) -> list[str] | None:
     return modalities or None
 
 
-def _logits_to_predictions(logits: torch.Tensor, task: str) -> torch.Tensor:
+def _logits_to_predictions(
+    logits: torch.Tensor,
+    task: str,
+    threshold: float = 0.5,
+) -> torch.Tensor:
     if task == "binary":
-        return (torch.sigmoid(logits[:, 0]) > 0.5).long()
+        return (torch.sigmoid(logits[:, 0]) > threshold).long()
     return logits.argmax(dim=1)
 
 

@@ -6,12 +6,14 @@ RUN_ROOT="${RUN_ROOT:-/kaggle/working/Geodata_Archaeology_CV/02_unet_segmentatio
 PYTHON_BIN="${PYTHON_BIN:-python}"
 EPOCHS="${EPOCHS:-50}"
 PATIENCE="${PATIENCE:-12}"
+RUN_MODE="${1:-${RUN_MODE:-train}}"
 LOG_DIR="$RUN_ROOT/logs"
 export RUN_ROOT
 
 SMOKE_VAL_REGIONS="042_ИЗБОРСК"
 BASELINE_VAL_REGIONS="042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА"
 BINARY_VAL_REGIONS="007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км"
+THRESHOLDS="${THRESHOLDS:-0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95}"
 
 mkdir -p "$LOG_DIR"
 
@@ -20,6 +22,7 @@ echo "RUN_ROOT=$RUN_ROOT"
 echo "PYTHON_BIN=$PYTHON_BIN"
 echo "EPOCHS=$EPOCHS"
 echo "PATIENCE=$PATIENCE"
+echo "RUN_MODE=$RUN_MODE"
 
 "$PYTHON_BIN" - <<'PY'
 import sys
@@ -158,7 +161,7 @@ run_threshold_sweep() {
   local log_prefix="$LOG_DIR/$name"
 
   if [[ ! -f "$out_dir/best_model.pth" ]]; then
-    echo "Skipping threshold sweep for $name: checkpoint not found at $out_dir/best_model.pth"
+    echo "[SKIP] checkpoint not found: $out_dir/best_model.pth"
     return 0
   fi
 
@@ -167,17 +170,108 @@ run_threshold_sweep() {
     "$PYTHON_BIN" -u threshold_sweep.py
     --data-root "$DATA_ROOT"
     --checkpoint "$out_dir/best_model.pth"
-    --output "$out_dir/threshold_sweep.csv"
+    --out-dir "$out_dir"
+    --task binary
     --image-size "$image_size"
     --batch-size "$batch_size"
     --split custom_regions
     --val-regions "$val_regions"
+    --thresholds "$THRESHOLDS"
   )
   if [[ -n "$modalities" ]]; then
     read -r -a modality_args <<< "$modalities"
     sweep_cmd+=(--modalities "${modality_args[@]}")
   fi
   "${sweep_cmd[@]}" 2>&1 | tee "$log_prefix.threshold_sweep.log"
+
+  local best_threshold
+  best_threshold=$("$PYTHON_BIN" - "$out_dir/threshold_sweep.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as file:
+    summary = json.load(file)
+print(summary["best_threshold"])
+PY
+)
+
+  echo "Rendering best-threshold prediction examples: $name threshold=$best_threshold"
+  local vis_cmd=(
+    "$PYTHON_BIN" -u visualize_predictions.py
+    --task binary
+    --data-root "$DATA_ROOT"
+    --checkpoint "$out_dir/best_model.pth"
+    --output "$out_dir/prediction_examples_thr_best.png"
+    --image-size "$image_size"
+    --batch-size "$batch_size"
+    --split custom_regions
+    --val-regions "$val_regions"
+    --threshold "$best_threshold"
+  )
+  if [[ -n "$modalities" ]]; then
+    read -r -a modality_args <<< "$modalities"
+    vis_cmd+=(--modalities "${modality_args[@]}")
+  fi
+  "${vis_cmd[@]}" 2>&1 | tee "$log_prefix.visualize_thr_best.log"
+}
+
+build_threshold_sweeps_summary() {
+  "$PYTHON_BIN" - <<'PY'
+import json
+import os
+from pathlib import Path
+
+import pandas as pd
+
+run_root = Path(os.environ["RUN_ROOT"])
+columns = [
+    "experiment",
+    "checkpoint",
+    "image_size",
+    "best_threshold",
+    "best_fg_iou",
+    "best_fg_dice",
+    "precision_at_best",
+    "recall_at_best",
+    "pixel_accuracy_at_best",
+    "fg_iou_at_0_5",
+    "delta_iou_vs_0_5",
+]
+rows = []
+for path in sorted(run_root.glob("*/threshold_sweep.json")):
+    with path.open("r", encoding="utf-8") as file:
+        summary = json.load(file)
+    run_dir = path.parent
+    rows.append(
+        {
+            "experiment": run_dir.name,
+            "checkpoint": summary.get("checkpoint"),
+            "image_size": summary.get("image_size"),
+            "best_threshold": summary.get("best_threshold"),
+            "best_fg_iou": summary.get("best_fg_iou"),
+            "best_fg_dice": summary.get("best_fg_dice"),
+            "precision_at_best": summary.get("precision_at_best"),
+            "recall_at_best": summary.get("recall_at_best"),
+            "pixel_accuracy_at_best": summary.get("pixel_accuracy_at_best"),
+            "fg_iou_at_0_5": summary.get("fg_iou_at_0_5"),
+            "delta_iou_vs_0_5": summary.get("delta_iou_vs_0_5"),
+        }
+    )
+
+summary_path = run_root / "threshold_sweeps_summary.csv"
+pd.DataFrame(rows, columns=columns).to_csv(summary_path, index=False)
+print(f"Saved threshold sweeps summary to {summary_path}")
+PY
+}
+
+run_threshold_sweeps() {
+  echo "Running threshold sweeps for trained binary UNet models..."
+  run_threshold_sweep "binary_li_no_dice" 8 256 "Li" "$BINARY_VAL_REGIONS"
+  run_threshold_sweep "binary_li_pos_weight_2" 8 256 "Li" "$BINARY_VAL_REGIONS"
+  run_threshold_sweep "binary_li_pos_weight_4" 8 256 "Li" "$BINARY_VAL_REGIONS"
+  run_threshold_sweep "binary_li_only" 8 256 "Li" "$BINARY_VAL_REGIONS"
+  run_threshold_sweep "binary_li_512_no_dice" 8 512 "Li" "$BINARY_VAL_REGIONS"
+  build_threshold_sweeps_summary
 }
 
 build_summary() {
@@ -246,6 +340,17 @@ pd.DataFrame(rows).to_csv(summary_path, index=False)
 print(f"Saved summary to {summary_path}")
 PY
 }
+
+if [[ "$RUN_MODE" == "threshold_sweeps" ]]; then
+  run_threshold_sweeps
+  echo "Done. Threshold sweep outputs are in $RUN_ROOT"
+  exit 0
+fi
+
+if [[ "$RUN_MODE" != "train" ]]; then
+  echo "Unknown RUN_MODE: $RUN_MODE. Use 'train' or 'threshold_sweeps'." >&2
+  exit 1
+fi
 
 echo "Running smoke test..."
 run_train_eval "smoke_test" "multiclass" 2 2 256 "" "" "" "$SMOKE_VAL_REGIONS"
