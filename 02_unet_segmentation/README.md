@@ -1,6 +1,30 @@
 # 02_unet_segmentation
 
+![Binary LiDAR kurgan segmentation](assets/readme/hero_binary_lidar.png)
+
 Экспериментальный пайплайн для semantic segmentation курганов на патчах геоданных.
+
+## Visual Results
+
+Лучший текущий UNet binary baseline для LiDAR (`binary_li_no_dice`, BCE only) выигрывает от подбора inference threshold: на validation regions оптимальный порог оказался `0.60`, а не стандартный `0.50`.
+
+![Threshold sweep for LiDAR binary UNet](assets/readme/threshold_sweep_binary_li_no_dice.png)
+
+Ниже несколько LiDAR binary predictions при threshold `0.60`: модель уверенно находит foreground курганов, но качество всё ещё зависит от размера объекта и шума рельефа.
+
+![Best LiDAR binary predictions](assets/readme/binary_li_best_predictions.png)
+
+Multiclass режим тоже находит археологический foreground, но разделение `whole` / `damaged` остаётся более сложной задачей, чем binary detection.
+
+![LiDAR multiclass examples](assets/readme/multiclass_li_examples.png)
+
+Сравнение сохранённых examples по модальностям показывает, почему LiDAR остаётся главным источником сигнала для этой постановки.
+
+![Modality comparison](assets/readme/modality_comparison.png)
+
+Типовые ошибки binary LiDAR baseline: шумный рельеф, ложные срабатывания, пропуски слабых объектов и объединение близких форм.
+
+![Binary LiDAR failure cases](assets/readme/failure_cases_binary_li.png)
 
 ## Структура датасета
 
