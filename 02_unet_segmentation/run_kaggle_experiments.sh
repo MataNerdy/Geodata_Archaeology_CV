@@ -46,12 +46,13 @@ run_train_eval() {
   local task="$2"
   local epochs="$3"
   local batch_size="$4"
-  local class_weights="$5"
-  local dice_weight="$6"
-  local modalities="$7"
-  local val_regions="$8"
-  local pos_weight="${9:-}"
-  local bce_weight="${10:-}"
+  local image_size="$5"
+  local class_weights="$6"
+  local dice_weight="$7"
+  local modalities="$8"
+  local val_regions="$9"
+  local pos_weight="${10:-}"
+  local bce_weight="${11:-}"
   local out_dir="$RUN_ROOT/$name"
   local log_prefix="$LOG_DIR/$name"
 
@@ -65,7 +66,7 @@ run_train_eval() {
     --epochs "$epochs"
     --batch-size "$batch_size"
     --lr 1e-3
-    --image-size 256
+    --image-size "$image_size"
     --split custom_regions
     --val-regions "$val_regions"
     --patience "$PATIENCE"
@@ -94,7 +95,7 @@ run_train_eval() {
     --data-root "$DATA_ROOT"
     --checkpoint "$out_dir/best_model.pth"
     --out-dir "$out_dir"
-    --image-size 256
+    --image-size "$image_size"
     --batch-size "$batch_size"
     --split custom_regions
     --val-regions "$val_regions"
@@ -122,8 +123,9 @@ run_visualization() {
   local name="$1"
   local task="$2"
   local batch_size="$3"
-  local modalities="$4"
-  local val_regions="$5"
+  local image_size="$4"
+  local modalities="$5"
+  local val_regions="$6"
   local out_dir="$RUN_ROOT/$name"
   local log_prefix="$LOG_DIR/$name"
 
@@ -134,7 +136,7 @@ run_visualization() {
     --data-root "$DATA_ROOT"
     --checkpoint "$out_dir/best_model.pth"
     --output "$out_dir/prediction_examples_eval.png"
-    --image-size 256
+    --image-size "$image_size"
     --batch-size "$batch_size"
     --split custom_regions
     --val-regions "$val_regions"
@@ -144,6 +146,38 @@ run_visualization() {
     vis_cmd+=(--modalities "${modality_args[@]}")
   fi
   "${vis_cmd[@]}" 2>&1 | tee "$log_prefix.visualize.log"
+}
+
+run_threshold_sweep() {
+  local name="$1"
+  local batch_size="$2"
+  local image_size="$3"
+  local modalities="$4"
+  local val_regions="$5"
+  local out_dir="$RUN_ROOT/$name"
+  local log_prefix="$LOG_DIR/$name"
+
+  if [[ ! -f "$out_dir/best_model.pth" ]]; then
+    echo "Skipping threshold sweep for $name: checkpoint not found at $out_dir/best_model.pth"
+    return 0
+  fi
+
+  echo "Running threshold sweep: $name"
+  local sweep_cmd=(
+    "$PYTHON_BIN" -u threshold_sweep.py
+    --data-root "$DATA_ROOT"
+    --checkpoint "$out_dir/best_model.pth"
+    --output "$out_dir/threshold_sweep.csv"
+    --image-size "$image_size"
+    --batch-size "$batch_size"
+    --split custom_regions
+    --val-regions "$val_regions"
+  )
+  if [[ -n "$modalities" ]]; then
+    read -r -a modality_args <<< "$modalities"
+    sweep_cmd+=(--modalities "${modality_args[@]}")
+  fi
+  "${sweep_cmd[@]}" 2>&1 | tee "$log_prefix.threshold_sweep.log"
 }
 
 build_summary() {
@@ -197,6 +231,9 @@ def _sort_key(row):
         "binary_li_no_dice",
         "binary_li_pos_weight_2",
         "binary_li_pos_weight_4",
+        "binary_li_512_no_dice",
+        "binary_li_512_pos_weight_2",
+        "binary_li_512_ce_dice",
     ]
     try:
         return order.index(row["experiment"])
@@ -211,16 +248,18 @@ PY
 }
 
 echo "Running smoke test..."
-run_train_eval "smoke_test" "multiclass" 2 2 "" "" "" "$SMOKE_VAL_REGIONS"
+run_train_eval "smoke_test" "multiclass" 2 2 256 "" "" "" "$SMOKE_VAL_REGIONS"
 
-echo "Smoke test completed. Running second-series binary experiments with early stopping..."
+echo "Smoke test completed. Running third-series final UNet binary experiments..."
 
-run_train_eval "binary_li_only" "binary" "$EPOCHS" 8 "" "1.0" "Li" "$BINARY_VAL_REGIONS" "2.0" "1.0"
-run_train_eval "binary_li_ae_only" "binary" "$EPOCHS" 8 "" "1.0" "Li,Ae" "$BINARY_VAL_REGIONS" "2.0" "1.0"
-run_train_eval "binary_all_modalities" "binary" "$EPOCHS" 8 "" "1.0" "Li Ae SpOr" "$BINARY_VAL_REGIONS" "2.0" "1.0"
-run_train_eval "binary_li_no_dice" "binary" "$EPOCHS" 8 "" "0.0" "Li" "$BINARY_VAL_REGIONS" "2.0" "1.0"
-run_train_eval "binary_li_pos_weight_2" "binary" "$EPOCHS" 8 "" "1.0" "Li" "$BINARY_VAL_REGIONS" "2.0" "1.0"
-run_train_eval "binary_li_pos_weight_4" "binary" "$EPOCHS" 8 "" "1.0" "Li" "$BINARY_VAL_REGIONS" "4.0" "1.0"
+run_train_eval "binary_li_512_no_dice" "binary" "$EPOCHS" 8 512 "" "0.0" "Li" "$BINARY_VAL_REGIONS" "1.0" "1.0"
+run_visualization "binary_li_512_no_dice" "binary" 8 512 "Li" "$BINARY_VAL_REGIONS"
+
+run_train_eval "binary_li_512_pos_weight_2" "binary" "$EPOCHS" 8 512 "" "0.0" "Li" "$BINARY_VAL_REGIONS" "2.0" "1.0"
+run_visualization "binary_li_512_pos_weight_2" "binary" 8 512 "Li" "$BINARY_VAL_REGIONS"
+
+run_train_eval "binary_li_512_ce_dice" "binary" "$EPOCHS" 8 512 "" "1.0" "Li" "$BINARY_VAL_REGIONS" "2.0" "1.0"
+run_visualization "binary_li_512_ce_dice" "binary" 8 512 "Li" "$BINARY_VAL_REGIONS"
 
 build_summary
 

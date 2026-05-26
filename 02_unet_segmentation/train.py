@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 
 from config import TrainConfig
 from dataset import KurganSegmentationDataset, load_metadata, make_experiment_split
-from losses import CombinedBinaryLoss, CombinedLoss
+from loss_functions import CombinedBinaryLoss, CombinedLoss
 from metrics import (
     binary_metrics_from_confusion,
     confusion_matrix,

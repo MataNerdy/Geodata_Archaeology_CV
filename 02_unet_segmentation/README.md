@@ -158,6 +158,26 @@ python evaluate.py \
   --pos-weight 2.0
 ```
 
+## Final UNet Binary Experiments
+
+Финальная серия перед DeepLab проверяет Li-only binary модели на `512x512`:
+
+```bash
+bash run_kaggle_experiments.sh
+```
+
+Активные эксперименты в скрипте:
+
+| Эксперимент | Модальности | Image size | Loss | Pos weight | Цель |
+|---|---|---:|---|---:|---|
+| binary_li_512_no_dice | Li | 512 | BCE | 1.0 | Проверить высокий input без Dice |
+| binary_li_512_pos_weight_2 | Li | 512 | BCE | 2.0 | Проверить foreground weight 2 |
+| binary_li_512_ce_dice | Li | 512 | BCE + Dice | 2.0 | Проверить Dice на 512 |
+
+После обучения для каждого из этих экспериментов запускаются `evaluate.py` и `visualize_predictions.py`.
+
+`threshold_sweep.py` добавлен как отдельный инструмент на будущее: его стоит запускать вручную только для избранных binary-моделей после сравнения основных результатов. Он перебирает thresholds от `0.05` до `0.95` с шагом `0.05`, сохраняет `threshold_sweep.csv` в папку эксперимента и печатает лучший threshold по `fg_iou`.
+
 ## План Экспериментов
 
 | Эксперимент | Модальности | Loss | Class weights | Цель |
@@ -248,18 +268,15 @@ bash run_kaggle_experiments.sh
 - `RUN_ROOT` - путь для результатов, по умолчанию `/kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs`;
 - `PYTHON_BIN` - Python executable, по умолчанию `python`.
 
-`run_kaggle_experiments.sh` печатает версии Python/PyTorch, проверяет CUDA, запускает smoke test, затем вторую серию binary-экспериментов. Логи сохраняются в `RUN_ROOT/logs`.
+`run_kaggle_experiments.sh` печатает версии Python/PyTorch, проверяет CUDA, запускает smoke test, затем третью серию final UNet binary experiments. Логи сохраняются в `RUN_ROOT/logs`.
 
-Kaggle-скрипт сейчас запускает вторую серию с early stopping `--patience 12`:
+Kaggle-скрипт сейчас запускает третью серию final UNet binary experiments с early stopping `--patience 12`:
 
-- `binary_li_only`
-- `binary_li_ae_only`
-- `binary_all_modalities`
-- `binary_li_no_dice`
-- `binary_li_pos_weight_2`
-- `binary_li_pos_weight_4`
+- `binary_li_512_no_dice`
+- `binary_li_512_pos_weight_2`
+- `binary_li_512_ce_dice`
 
-После каждого обучения запускается `evaluate.py`; все `evaluation.json` под `RUN_ROOT`, включая сохранённые результаты первой серии, собираются в `RUN_ROOT/experiments_summary.csv`.
+После каждого обучения запускаются `evaluate.py` и `visualize_predictions.py`. Все `evaluation.json` под `RUN_ROOT`, включая сохранённые результаты прошлых серий, собираются в `RUN_ROOT/experiments_summary.csv`.
 
 ## Следующие эксперименты
 

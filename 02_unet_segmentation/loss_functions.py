@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-__path__ = [str(Path(__file__).with_name("losses"))]
 
 
 class DiceLoss(nn.Module):
