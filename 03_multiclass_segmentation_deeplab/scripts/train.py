@@ -12,6 +12,11 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+for module_name in ("datasets", "losses", "models", "utils"):
+    module = sys.modules.get(module_name)
+    module_file = getattr(module, "__file__", "") if module is not None else ""
+    if module is not None and str(PROJECT_ROOT) not in str(module_file):
+        sys.modules.pop(module_name, None)
 
 import numpy as np
 import pandas as pd
@@ -384,4 +389,3 @@ def print_summary_by_region_modality(meta: pd.DataFrame) -> None:
 
 if __name__ == "__main__":
     main()
-

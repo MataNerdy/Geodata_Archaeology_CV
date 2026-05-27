@@ -203,12 +203,22 @@ python scripts/evaluate_competition_metric.py \
 ```bash
 REPO_URL=https://github.com/MataNerdy/Geodata_Archaeology_CV.git
 BRANCH=main
-DATA_ROOT=/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset
+DATA_ROOT=/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset/segmentation_dataset
 RUN_ROOT=/kaggle/working/Geodata_Archaeology_CV/03_multiclass_segmentation_deeplab/runs
 EXPERIMENT_CONFIG=configs/binary_kurgan.yaml
 ```
 
-5. Запустить notebook и скачать `deeplab_runs.zip`.
+5. Для минимальной серии экспериментов можно запустить:
+
+```bash
+cd /kaggle/working/Geodata_Archaeology_CV/03_multiclass_segmentation_deeplab
+
+DATA_ROOT=/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset/segmentation_dataset \
+RUN_ROOT=/kaggle/working/Geodata_Archaeology_CV/03_multiclass_segmentation_deeplab/runs \
+bash run_kaggle_experiments.sh
+```
+
+6. Запустить notebook и скачать `deeplab_runs.zip`.
 
 ## Артефакты
 
