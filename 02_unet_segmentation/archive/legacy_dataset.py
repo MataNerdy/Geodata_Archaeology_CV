@@ -13,6 +13,7 @@ from torch.utils.data import Dataset
 
 
 REQUIRED_METADATA_COLUMNS = {"sample_id", "region", "modality"}
+DEFAULT_BINARY_POSITIVE_CLASSES = (1, 2)
 
 
 def sample_id_to_name(sample_id: object) -> str:
@@ -204,6 +205,7 @@ class KurganSegmentationDataset(Dataset):
         image_size: int = 256,
         normalize: str = "zscore",
         task: str = "multiclass",
+        binary_positive_classes: Iterable[int] | None = None,
     ) -> None:
         if task not in {"multiclass", "binary"}:
             raise ValueError("task must be 'multiclass' or 'binary'")
@@ -212,6 +214,12 @@ class KurganSegmentationDataset(Dataset):
         self.image_size = image_size
         self.normalize = normalize
         self.task = task
+        self.binary_positive_classes = tuple(
+            int(class_id)
+            for class_id in (binary_positive_classes or DEFAULT_BINARY_POSITIVE_CLASSES)
+        )
+        if not self.binary_positive_classes:
+            raise ValueError("binary_positive_classes must contain at least one class id")
 
     def __len__(self) -> int:
         return len(self.meta)
@@ -268,15 +276,28 @@ class KurganSegmentationDataset(Dataset):
                 f"Expected 2D image/mask for sample {sample_id}, "
                 f"got image={image.shape}, mask={mask.shape}"
             )
+        original_mask_values = set(np.unique(mask.astype(np.int64)).tolist())
 
         if image.shape != (self.image_size, self.image_size):
             image = self._resize_image(image)
         if mask.shape != (self.image_size, self.image_size):
             mask = self._resize_mask(mask)
 
-        mask = remap_to_kurgan_classes(mask)
         if self.task == "binary":
-            mask = (mask > 0).astype(np.int64)
+            mask = make_binary_mask(mask, self.binary_positive_classes)
+            if (
+                original_mask_values
+                and original_mask_values.isdisjoint(set(self.binary_positive_classes))
+                and original_mask_values.intersection({3, 4, 5})
+                and int(mask.sum()) != 0
+            ):
+                raise ValueError(
+                    f"Binary hard-negative sample {sample_id} produced non-empty GT. "
+                    f"source_values={sorted(original_mask_values)}, "
+                    f"positive_classes={list(self.binary_positive_classes)}"
+                )
+        else:
+            mask = remap_to_kurgan_classes(mask)
 
         image = self._normalize(image)
         return {
@@ -293,3 +314,12 @@ def remap_to_kurgan_classes(mask: np.ndarray) -> np.ndarray:
 
     mask = mask.astype(np.int64)
     return np.where(np.isin(mask, [1, 2]), mask, 0).astype(np.int64)
+
+
+def make_binary_mask(
+    mask: np.ndarray,
+    positive_classes: Iterable[int] = DEFAULT_BINARY_POSITIVE_CLASSES,
+) -> np.ndarray:
+    """Create a binary mask from explicit positive source classes."""
+
+    return np.isin(mask.astype(np.int64), list(positive_classes)).astype(np.int64)

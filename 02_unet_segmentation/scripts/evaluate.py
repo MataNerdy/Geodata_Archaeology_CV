@@ -4,19 +4,25 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
-from dataset import KurganSegmentationDataset, load_metadata, make_experiment_split
-from model import build_model
-from train import (
+from datasets.kurgan_dataset import KurganSegmentationDataset, load_metadata, make_experiment_split
+from models.unet_small import build_model
+from scripts.train import (
     build_criterion,
     evaluate_loader,
     get_device,
     normalize_modalities,
+    parse_int_list,
     parse_val_regions,
     validate_task_args,
 )
@@ -32,6 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--task", choices=["binary", "multiclass"], default="multiclass")
+    parser.add_argument("--binary-positive-classes", default="1,2")
     parser.add_argument(
         "--split",
         choices=["region", "custom_regions", "random"],
@@ -55,6 +62,7 @@ def main() -> None:
 
     args = parse_args()
     args.modalities = normalize_modalities(args.modalities)
+    args.binary_positive_classes = parse_int_list(args.binary_positive_classes)
     validate_task_args(args)
     device = get_device()
     _, val_df = make_experiment_split(
@@ -71,6 +79,7 @@ def main() -> None:
         args.data_root,
         args.image_size,
         task=args.task,
+        binary_positive_classes=args.binary_positive_classes,
     )
     loader = DataLoader(
         dataset,

@@ -5,7 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import sys
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import numpy as np
 import pandas as pd
@@ -13,17 +18,20 @@ import torch
 from torch.utils.data import DataLoader
 
 from config import TrainConfig
-from dataset import KurganSegmentationDataset, load_metadata, make_experiment_split
-from loss_functions import CombinedBinaryLoss, CombinedLoss
-from metrics import (
+from datasets.kurgan_dataset import KurganSegmentationDataset, load_metadata, make_experiment_split
+from losses import CombinedBinaryLoss, CombinedLoss
+from models.unet_small import build_model
+from scripts.visualize_predictions import save_prediction_grid
+from utils.metrics import (
     binary_metrics_from_confusion,
     confusion_matrix,
     flatten_modality_metrics,
     metrics_from_confusion,
     update_modality_confusions,
 )
-from model import build_model
-from visualize_predictions import save_prediction_grid
+
+
+DEFAULT_BINARY_POSITIVE_CLASSES = "1,2"
 
 
 def parse_args() -> argparse.Namespace:
@@ -39,6 +47,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--weight-decay", type=float, default=defaults.weight_decay)
     parser.add_argument("--image-size", type=int, default=defaults.image_size)
     parser.add_argument("--task", choices=["binary", "multiclass"], default="multiclass")
+    parser.add_argument(
+        "--binary-positive-classes",
+        default=DEFAULT_BINARY_POSITIVE_CLASSES,
+        help="Comma-separated source mask classes treated as foreground in binary mode",
+    )
     parser.add_argument(
         "--split",
         choices=["region", "custom_regions", "random"],
@@ -189,6 +202,7 @@ def main() -> None:
 
     args = parse_args()
     args.modalities = normalize_modalities(args.modalities)
+    args.binary_positive_classes = parse_int_list(args.binary_positive_classes)
     validate_task_args(args)
     set_seed(args.seed)
     out_dir = Path(args.out_dir)
@@ -212,12 +226,14 @@ def main() -> None:
         args.data_root,
         args.image_size,
         task=args.task,
+        binary_positive_classes=args.binary_positive_classes,
     )
     val_dataset = KurganSegmentationDataset(
         val_df,
         args.data_root,
         args.image_size,
         task=args.task,
+        binary_positive_classes=args.binary_positive_classes,
     )
     train_loader = DataLoader(
         train_dataset,
@@ -366,6 +382,18 @@ def validate_task_args(args: argparse.Namespace) -> None:
         raise ValueError("--class-weights is only used for --task multiclass")
     if args.task == "multiclass" and args.pos_weight is not None:
         raise ValueError("--pos-weight is only used for --task binary")
+
+
+def parse_int_list(value: str | list[int] | tuple[int, ...]) -> list[int]:
+    """Parse comma-separated integer ids."""
+
+    if isinstance(value, (list, tuple)):
+        parsed = [int(item) for item in value]
+    else:
+        parsed = [int(item.strip()) for item in value.split(",") if item.strip()]
+    if not parsed:
+        raise ValueError("Expected at least one integer class id")
+    return parsed
 
 
 def parse_class_weights(value: str | None) -> list[float] | None:

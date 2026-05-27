@@ -7,8 +7,13 @@ for binary, multiclass, and modality-comparison README assets.
 from __future__ import annotations
 
 import argparse
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import matplotlib
 
@@ -18,9 +23,9 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
 
-from dataset import KurganSegmentationDataset, load_metadata, make_experiment_split
-from model import build_model
-from train import normalize_modalities, parse_val_regions
+from datasets.kurgan_dataset import KurganSegmentationDataset, load_metadata, make_experiment_split
+from models.unet_small import build_model
+from scripts.train import normalize_modalities, parse_int_list, parse_val_regions
 
 
 MASK_COLORS = np.array(
@@ -55,6 +60,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--task", choices=["binary", "multiclass"], default="binary")
+    parser.add_argument("--binary-positive-classes", default="1,2")
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("--split", choices=["region", "custom_regions", "random"], default="custom_regions")
     parser.add_argument("--val-region")
@@ -74,6 +80,7 @@ def main() -> None:
 
     args = parse_args()
     args.modalities = normalize_modalities(args.modalities)
+    args.binary_positive_classes = parse_int_list(args.binary_positive_classes)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     _, val_df = make_experiment_split(
@@ -89,6 +96,7 @@ def main() -> None:
         args.data_root,
         args.image_size,
         task=args.task,
+        binary_positive_classes=args.binary_positive_classes,
     )
     model = load_model(args.checkpoint, args.task, device)
     ranked = rank_samples(model, dataset, args.task, args.threshold, device, args.num_workers)

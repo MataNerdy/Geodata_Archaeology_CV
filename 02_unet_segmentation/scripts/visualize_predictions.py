@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import matplotlib
 
@@ -13,8 +18,8 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from dataset import KurganSegmentationDataset, load_metadata, make_experiment_split
-from model import build_model
+from datasets.kurgan_dataset import KurganSegmentationDataset, load_metadata, make_experiment_split
+from models.unet_small import build_model
 
 
 MASK_COLORS = np.array(
@@ -105,6 +110,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--task", choices=["binary", "multiclass"], default="multiclass")
+    parser.add_argument("--binary-positive-classes", default="1,2")
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument(
         "--split",
@@ -124,6 +130,7 @@ def main() -> None:
 
     args = parse_args()
     args.modalities = normalize_modalities(args.modalities)
+    args.binary_positive_classes = parse_int_list(args.binary_positive_classes)
     device = torch.device(
         "cuda"
         if torch.cuda.is_available()
@@ -144,6 +151,7 @@ def main() -> None:
         args.data_root,
         args.image_size,
         task=args.task,
+        binary_positive_classes=args.binary_positive_classes,
     )
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
     model = load_checkpoint_model(args.checkpoint, device, task=args.task)
@@ -182,6 +190,16 @@ def normalize_modalities(values: list[str] | None) -> list[str] | None:
     for value in values:
         modalities.extend(item.strip() for item in value.split(",") if item.strip())
     return modalities or None
+
+
+def parse_int_list(value: str | list[int] | tuple[int, ...]) -> list[int]:
+    if isinstance(value, (list, tuple)):
+        parsed = [int(item) for item in value]
+    else:
+        parsed = [int(item.strip()) for item in value.split(",") if item.strip()]
+    if not parsed:
+        raise ValueError("Expected at least one integer class id")
+    return parsed
 
 
 def _logits_to_predictions(

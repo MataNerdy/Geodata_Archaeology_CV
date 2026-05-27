@@ -15,6 +15,7 @@ SMOKE_VAL_REGIONS="042_ИЗБОРСК"
 BASELINE_VAL_REGIONS="042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА"
 BINARY_VAL_REGIONS="007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км"
 THRESHOLDS="${THRESHOLDS:-0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95}"
+BINARY_POSITIVE_CLASSES="${BINARY_POSITIVE_CLASSES:-1,2}"
 
 mkdir -p "$LOG_DIR"
 
@@ -25,6 +26,7 @@ echo "PYTHON_BIN=$PYTHON_BIN"
 echo "EPOCHS=$EPOCHS"
 echo "PATIENCE=$PATIENCE"
 echo "RUN_MODE=$RUN_MODE"
+echo "BINARY_POSITIVE_CLASSES=$BINARY_POSITIVE_CLASSES"
 
 "$PYTHON_BIN" - <<'PY'
 import sys
@@ -64,7 +66,7 @@ run_train_eval() {
   echo "Running experiment: $name"
 
   local train_cmd=(
-    "$PYTHON_BIN" -u train.py
+    "$PYTHON_BIN" -u scripts/train.py
     --task "$task"
     --data-root "$DATA_ROOT"
     --out-dir "$out_dir"
@@ -76,6 +78,9 @@ run_train_eval() {
     --val-regions "$val_regions"
     --patience "$PATIENCE"
   )
+  if [[ "$task" == "binary" ]]; then
+    train_cmd+=(--binary-positive-classes "$BINARY_POSITIVE_CLASSES")
+  fi
   if [[ -n "$class_weights" ]]; then
     train_cmd+=(--class-weights "$class_weights")
   fi
@@ -95,7 +100,7 @@ run_train_eval() {
   "${train_cmd[@]}" 2>&1 | tee "$log_prefix.train.log"
 
   local eval_cmd=(
-    "$PYTHON_BIN" -u evaluate.py
+    "$PYTHON_BIN" -u scripts/evaluate.py
     --task "$task"
     --data-root "$DATA_ROOT"
     --checkpoint "$out_dir/best_model.pth"
@@ -105,6 +110,9 @@ run_train_eval() {
     --split custom_regions
     --val-regions "$val_regions"
   )
+  if [[ "$task" == "binary" ]]; then
+    eval_cmd+=(--binary-positive-classes "$BINARY_POSITIVE_CLASSES")
+  fi
   if [[ -n "$class_weights" ]]; then
     eval_cmd+=(--class-weights "$class_weights")
   fi
@@ -136,7 +144,7 @@ run_visualization() {
 
   echo "Rendering prediction examples: $name"
   local vis_cmd=(
-    "$PYTHON_BIN" -u visualize_predictions.py
+    "$PYTHON_BIN" -u scripts/visualize_predictions.py
     --task "$task"
     --data-root "$DATA_ROOT"
     --checkpoint "$out_dir/best_model.pth"
@@ -146,6 +154,9 @@ run_visualization() {
     --split custom_regions
     --val-regions "$val_regions"
   )
+  if [[ "$task" == "binary" ]]; then
+    vis_cmd+=(--binary-positive-classes "$BINARY_POSITIVE_CLASSES")
+  fi
   if [[ -n "$modalities" ]]; then
     read -r -a modality_args <<< "$modalities"
     vis_cmd+=(--modalities "${modality_args[@]}")
@@ -176,7 +187,7 @@ run_threshold_sweep() {
 
   echo "Running threshold sweep: $name"
   local sweep_cmd=(
-    "$PYTHON_BIN" -u threshold_sweep.py
+    "$PYTHON_BIN" -u scripts/threshold_sweep.py
     --data-root "$DATA_ROOT"
     --checkpoint "$checkpoint"
     --out-dir "$out_dir"
@@ -186,6 +197,7 @@ run_threshold_sweep() {
     --split custom_regions
     --val-regions "$val_regions"
     --thresholds "$THRESHOLDS"
+    --binary-positive-classes "$BINARY_POSITIVE_CLASSES"
   )
   if [[ -n "$modalities" ]]; then
     read -r -a modality_args <<< "$modalities"
@@ -206,7 +218,7 @@ PY
 
   echo "Rendering best-threshold prediction examples: $name threshold=$best_threshold"
   local vis_cmd=(
-    "$PYTHON_BIN" -u visualize_predictions.py
+    "$PYTHON_BIN" -u scripts/visualize_predictions.py
     --task binary
     --data-root "$DATA_ROOT"
     --checkpoint "$checkpoint"
@@ -216,6 +228,7 @@ PY
     --split custom_regions
     --val-regions "$val_regions"
     --threshold "$best_threshold"
+    --binary-positive-classes "$BINARY_POSITIVE_CLASSES"
   )
   if [[ -n "$modalities" ]]; then
     read -r -a modality_args <<< "$modalities"

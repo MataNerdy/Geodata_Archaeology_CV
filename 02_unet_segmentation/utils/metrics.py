@@ -1,112 +1,128 @@
+"""Metrics for multiclass semantic segmentation."""
+
+from __future__ import annotations
+
+import math
+
 import torch
 
-def per_class_iou(logits, targets, num_classes=3, smooth=1e-6):
-    preds = torch.argmax(logits, dim=1)
-    out = {}
-
-    for cls in range(num_classes):
-        pred_cls = (preds == cls).float()
-        target_cls = (targets == cls).float()
-
-        intersection = (pred_cls * target_cls).sum(dim=(1, 2))
-        union = pred_cls.sum(dim=(1, 2)) + target_cls.sum(dim=(1, 2)) - intersection
-        iou = (intersection + smooth) / (union + smooth)
-        out[cls] = iou.mean().item()
-
-    return out
-
-def per_class_dice(logits, targets, num_classes=3, smooth=1e-6):
-    preds = torch.argmax(logits, dim=1)
-    out = {}
-
-    for cls in range(num_classes):
-        pred_cls = (preds == cls).float()
-        target_cls = (targets == cls).float()
-
-        intersection = (pred_cls * target_cls).sum(dim=(1, 2))
-        union = pred_cls.sum(dim=(1, 2)) + target_cls.sum(dim=(1, 2))
-        dice = (2 * intersection + smooth) / (union + smooth)
-        out[cls] = dice.mean().item()
-
-    return out
-
-def mean_fg_iou(logits, targets):
-    cls_iou = per_class_iou(logits, targets, num_classes=3)
-    return (cls_iou[1] + cls_iou[2]) / 2.0
+from config import CLASS_NAMES
 
 
-def mean_fg_dice(logits, targets):
-    cls_dice = per_class_dice(logits, targets, num_classes=3)
-    return (cls_dice[1] + cls_dice[2]) / 2.0
+def confusion_matrix(
+    preds: torch.Tensor,
+    targets: torch.Tensor,
+    num_classes: int = 3,
+) -> torch.Tensor:
+    """Build a target-by-prediction confusion matrix."""
 
-def dice_score(logits, targets, threshold=0.5, smooth=1e-6):
-    probs = torch.sigmoid(logits)
-    preds = (probs > threshold).float()
-
-    preds = preds.view(preds.size(0), -1)
-    targets = targets.view(targets.size(0), -1)
-
-    intersection = (preds * targets).sum(dim=1)
-    union = preds.sum(dim=1) + targets.sum(dim=1)
-
-    dice = (2 * intersection + smooth) / (union + smooth)
-    return dice.mean().item()
-
-def iou_score(logits, targets, threshold=0.5, smooth=1e-6):
-    probs = torch.sigmoid(logits)
-    preds = (probs > threshold).float()
-
-    preds = preds.view(preds.size(0), -1)
-    targets = targets.view(targets.size(0), -1)
-
-    intersection = (preds * targets).sum(dim=1)
-    total = preds.sum(dim=1) + targets.sum(dim=1) - intersection
-
-    iou = (intersection + smooth) / (total + smooth)
-    return iou.mean().item()
+    preds = preds.view(-1).to(torch.int64)
+    targets = targets.view(-1).to(torch.int64)
+    valid = (targets >= 0) & (targets < num_classes)
+    encoded = targets[valid] * num_classes + preds[valid].clamp(0, num_classes - 1)
+    matrix = torch.bincount(encoded, minlength=num_classes**2)
+    return matrix.reshape(num_classes, num_classes).cpu()
 
 
-def evaluate(model, loader, criterion, device):
-    model.eval()
+def metrics_from_confusion(matrix: torch.Tensor, prefix: str = "") -> dict[str, float]:
+    """Compute IoU and Dice metrics from a confusion matrix."""
 
-    total_loss = 0.0
-    total_dice = 0.0
-    total_iou = 0.0
-    n_batches = 0
+    matrix = matrix.float()
+    tp = matrix.diag()
+    target_pixels = matrix.sum(dim=1)
+    pred_pixels = matrix.sum(dim=0)
 
-    per_cls_dice_sum = {0: 0.0, 1: 0.0, 2: 0.0}
-    per_cls_iou_sum = {0: 0.0, 1: 0.0, 2: 0.0}
+    iou_den = target_pixels + pred_pixels - tp
+    dice_den = target_pixels + pred_pixels
+    iou = torch.where(iou_den > 0, tp / iou_den.clamp_min(1.0), torch.nan)
+    dice = torch.where(dice_den > 0, 2.0 * tp / dice_den.clamp_min(1.0), torch.nan)
 
-    with torch.no_grad():
-        for batch in loader:
-            images = batch["image"].to(device)   # [B, 1, H, W]
-            masks = batch["mask"].to(device)     # [B, H, W]
+    result: dict[str, float] = {}
+    for class_id, name in CLASS_NAMES.items():
+        result[f"{prefix}iou_{name}"] = _to_float(iou[class_id])
+        result[f"{prefix}dice_{name}"] = _to_float(dice[class_id])
 
-            logits = model(images)
-            loss, _ = criterion(logits, masks)
+    fg_classes = torch.tensor([1, 2])
+    result[f"{prefix}mean_fg_iou"] = _nanmean(iou[fg_classes])
+    result[f"{prefix}mean_fg_dice"] = _nanmean(dice[fg_classes])
 
-            total_loss += loss.item()
-            total_dice += mean_fg_dice(logits, masks)
-            total_iou += mean_fg_iou(logits, masks)
+    fg_intersection = matrix[1:, 1:].sum()
+    fg_target = matrix[1:, :].sum()
+    fg_pred = matrix[:, 1:].sum()
+    fg_union = fg_target + fg_pred - fg_intersection
+    result[f"{prefix}fg_iou"] = _safe_div(fg_intersection, fg_union)
+    result[f"{prefix}fg_dice"] = _safe_div(2.0 * fg_intersection, fg_target + fg_pred)
 
-            cls_dice = per_class_dice(logits, masks, num_classes=3)
-            cls_iou = per_class_iou(logits, masks, num_classes=3)
+    correct = tp.sum()
+    total = matrix.sum()
+    result[f"{prefix}pixel_accuracy"] = _safe_div(correct, total)
+    return result
 
-            for k in per_cls_dice_sum:
-                per_cls_dice_sum[k] += cls_dice[k]
-                per_cls_iou_sum[k] += cls_iou[k]
 
-            n_batches += 1
+def binary_metrics_from_confusion(
+    matrix: torch.Tensor,
+    prefix: str = "",
+) -> dict[str, float]:
+    """Compute foreground IoU, Dice and pixel accuracy for binary segmentation."""
 
-    metrics = {
-        "loss": total_loss / n_batches,
-        "mean_fg_dice": total_dice / n_batches,
-        "mean_fg_iou": total_iou / n_batches,
-        "dice_bg": per_cls_dice_sum[0] / n_batches,
-        "dice_whole": per_cls_dice_sum[1] / n_batches,
-        "dice_damaged": per_cls_dice_sum[2] / n_batches,
-        "iou_bg": per_cls_iou_sum[0] / n_batches,
-        "iou_whole": per_cls_iou_sum[1] / n_batches,
-        "iou_damaged": per_cls_iou_sum[2] / n_batches,
+    matrix = matrix.float()
+    tp = matrix[1, 1]
+    tn = matrix[0, 0]
+    fp = matrix[0, 1]
+    fn = matrix[1, 0]
+    result = {
+        f"{prefix}fg_iou": _safe_div(tp, tp + fp + fn),
+        f"{prefix}fg_dice": _safe_div(2.0 * tp, 2.0 * tp + fp + fn),
+        f"{prefix}pixel_accuracy": _safe_div(tp + tn, matrix.sum()),
     }
-    return metrics
+    return result
+
+
+def update_modality_confusions(
+    store: dict[str, torch.Tensor],
+    preds: torch.Tensor,
+    targets: torch.Tensor,
+    modalities: list[str],
+    num_classes: int = 3,
+) -> None:
+    """Accumulate confusion matrices separately for each modality."""
+
+    for index, modality in enumerate(modalities):
+        if modality not in store:
+            store[modality] = torch.zeros((num_classes, num_classes), dtype=torch.int64)
+        store[modality] += confusion_matrix(preds[index], targets[index], num_classes)
+
+
+def flatten_modality_metrics(
+    modality_confusions: dict[str, torch.Tensor],
+    split: str,
+    task: str = "multiclass",
+) -> dict[str, float]:
+    """Convert per-modality confusion matrices to flat CSV-friendly metrics."""
+
+    output: dict[str, float] = {}
+    for modality, matrix in sorted(modality_confusions.items()):
+        if task == "binary":
+            output.update(binary_metrics_from_confusion(matrix, prefix=f"{split}_{modality}_"))
+        else:
+            output.update(metrics_from_confusion(matrix, prefix=f"{split}_{modality}_"))
+    return output
+
+
+def _safe_div(numerator: torch.Tensor, denominator: torch.Tensor) -> float:
+    if float(denominator) <= 0:
+        return math.nan
+    return float((numerator / denominator).cpu())
+
+
+def _nanmean(values: torch.Tensor) -> float:
+    values = values[~torch.isnan(values)]
+    if values.numel() == 0:
+        return math.nan
+    return float(values.mean().cpu())
+
+
+def _to_float(value: torch.Tensor) -> float:
+    if torch.isnan(value):
+        return math.nan
+    return float(value.cpu())

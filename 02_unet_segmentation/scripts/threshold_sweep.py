@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import matplotlib
 
@@ -15,9 +20,9 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
-from dataset import KurganSegmentationDataset, load_metadata, make_experiment_split
-from model import build_model
-from train import get_device, normalize_modalities, parse_val_regions
+from datasets.kurgan_dataset import KurganSegmentationDataset, load_metadata, make_experiment_split
+from models.unet_small import build_model
+from scripts.train import get_device, normalize_modalities, parse_int_list, parse_val_regions
 
 
 DEFAULT_THRESHOLDS = ",".join(f"{value / 100:.2f}" for value in range(5, 100, 5))
@@ -32,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir")
     parser.add_argument("--output", help="Optional explicit CSV path; kept for old calls")
     parser.add_argument("--task", choices=["binary", "multiclass"])
+    parser.add_argument("--binary-positive-classes")
     parser.add_argument("--image-size", type=int)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument(
@@ -66,6 +72,9 @@ def main() -> None:
         raise ValueError("threshold_sweep.py currently supports only --task binary")
 
     image_size = int(resolve_value(args.image_size, checkpoint, config, "image_size", 256))
+    binary_positive_classes = parse_int_list(
+        resolve_value(args.binary_positive_classes, checkpoint, config, "binary_positive_classes", "1,2")
+    )
     modalities = normalize_modalities(args.modalities)
     if modalities is None:
         modalities = normalize_modalities(resolve_value(None, checkpoint, config, "modalities", None))
@@ -78,7 +87,12 @@ def main() -> None:
     plot_path = out_dir / "threshold_sweep.png"
 
     thresholds = parse_thresholds(args)
-    loader = build_validation_loader(args, image_size=image_size, modalities=modalities)
+    loader = build_validation_loader(
+        args,
+        image_size=image_size,
+        modalities=modalities,
+        binary_positive_classes=binary_positive_classes,
+    )
     probs, targets = collect_probabilities(checkpoint, loader, device)
 
     rows = [compute_threshold_metrics(probs, targets, threshold) for threshold in thresholds]
@@ -92,6 +106,7 @@ def main() -> None:
         "task": task,
         "image_size": image_size,
         "modalities": modalities,
+        "binary_positive_classes": binary_positive_classes,
         "best_threshold": float(best_row["threshold"]),
         "best_fg_iou": float(best_row["fg_iou"]),
         "best_fg_dice": float(best_row["fg_dice"]),
@@ -114,6 +129,7 @@ def build_validation_loader(
     args: argparse.Namespace,
     image_size: int,
     modalities: list[str] | None,
+    binary_positive_classes: list[int],
 ) -> DataLoader:
     """Build the validation loader using the same split logic as evaluation."""
 
@@ -130,6 +146,7 @@ def build_validation_loader(
         args.data_root,
         image_size,
         task="binary",
+        binary_positive_classes=binary_positive_classes,
     )
     return DataLoader(
         dataset,

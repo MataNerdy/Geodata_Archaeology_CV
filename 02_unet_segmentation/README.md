@@ -1,215 +1,578 @@
-# 02_unet_segmentation
+# Kurgan Segmentation with U-Net on Multi-Modal Archaeological Geodata
 
-![Binary LiDAR kurgan segmentation](assets/readme/hero_binary_lidar.png)
 
-Экспериментальный пайплайн для semantic segmentation курганов на патчах геоданных.
 
-## Visual Results
+Экспериментальный CV-пайплайн для semantic segmentation археологических объектов на многомодальных геоданных с фокусом на курганы и LiDAR morphology.
 
-Лучший текущий UNet binary baseline для LiDAR (`binary_li_no_dice`, BCE only) выигрывает от подбора inference threshold: на validation regions оптимальный порог оказался `0.60`, а не стандартный `0.50`.
+Проект исследует, насколько разные типы геоданных подходят для автоматического выделения археологических структур:
 
-![Threshold sweep for LiDAR binary UNet](assets/readme/threshold_sweep_binary_li_no_dice.png)
+- LiDAR;
+- аэрофотоснимки (Ae);
+- спутниковые изображения (SpOr);
+- их комбинации.
 
-Ниже несколько LiDAR binary predictions при threshold `0.60`: модель уверенно находит foreground курганов, но качество всё ещё зависит от размера объекта и шума рельефа.
+Основная цель проекта — построить воспроизводимый segmentation baseline и исследовать:
 
-![Best LiDAR binary predictions](assets/readme/binary_li_best_predictions.png)
+- влияние модальности;
+- multiclass vs binary formulation;
+- Dice Loss;
+- image size;
+- threshold calibration;
+- hard negatives из других археологических классов.
 
-Multiclass режим тоже находит археологический foreground, но разделение `whole` / `damaged` остаётся более сложной задачей, чем binary detection.
+---
 
-![LiDAR multiclass examples](assets/readme/multiclass_li_examples.png)
+![Hero](assets/readme/hero_binary_shumgora_medium.png)
 
-Сравнение сохранённых examples по модальностям показывает, почему LiDAR остаётся главным источником сигнала для этой постановки.
+*Binary LiDAR segmentation: Image | Ground Truth | Prediction | Overlay.*
 
-![Modality comparison](assets/readme/modality_comparison.png)
+---
 
-Типовые ошибки binary LiDAR baseline: шумный рельеф, ложные срабатывания, пропуски слабых объектов и объединение близких форм.
+# STAR
 
-![Binary LiDAR failure cases](assets/readme/failure_cases_binary_li.png)
+## Situation
 
-## Структура датасета
+Археологическая сегментация на геоданных — сложная CV-задача:
 
-Ожидаемый датасет:
+- объекты маленькие;
+- foreground сильно меньше background;
+- morphology отличается между регионами;
+- данные мультимодальны;
+- спутниковые изображения имеют низкое spatial resolution;
+- аэрофотоснимки содержат сильный domain shift;
+- LiDAR хранит рельеф, но шумный и неоднородный.
+
+Дополнительно dataset содержит разные типы археологических объектов:
+
+- курганы;
+- городища;
+- фортификации;
+- архитектурные структуры.
+
+Это создаёт сложные hard negatives:
+модель должна отличать курганы от других morphology-rich archaeological объектов.
+
+---
+
+## Task
+
+Построить воспроизводимый segmentation pipeline:
+
+- реализовать UNet baseline;
+- поддержать multiclass и binary режимы;
+- исследовать влияние:
+  - модальности,
+  - Dice loss,
+  - class weights,
+  - threshold,
+  - image size;
+- провести controlled experiments;
+- определить лучший baseline перед переходом к DeepLabV3+.
+
+---
+
+## Action
+
+### Dataset Pipeline
+
+Используется patch-based датасет:
 
 ```text
-../datasets/segmentation_dataset/
+datasets/segmentation_dataset/
 ├── images/
-│   └── 000000.npy
 ├── masks/
-│   └── 000000.npy
 └── metadata.csv
 ```
 
-`metadata.csv` должен содержать как минимум:
+Поддерживаемые модальности:
 
-- `sample_id` - идентификатор патча, совпадает с именами `.npy`;
-- `region` - регион для region-aware split;
-- `modality` - модальность, например `Li`, `Ae`, `SpOr`.
+- `Li`
+- `Ae`
+- `SpOr`
 
-Маска обучается как 3-классовая:
+---
 
-- `0` - background;
-- `1` - whole kurgan;
-- `2` - damaged kurgan.
+### Multiclass Mode
 
-Если в исходных масках встречаются другие археологические классы, например `3`, `4`, `5`, loader маппит их в background `0`. Для этого эксперимента модель учится только на классах курганов.
+| Class | Description |
+|---|---|
+| 0 | background |
+| 1 | whole kurgan |
+| 2 | damaged kurgan |
 
-Скрипты проверяют наличие `metadata.csv`, папок `images/` и `masks/`, соответствие `sample_id` файлам, непустой train/val split и наличие выбранных validation regions.
+Дополнительные археологические классы автоматически маппятся в background.
 
-## Окружение
+---
 
-Команды ниже нужно запускать из Python-окружения, где установлены `numpy`, `pandas`, `torch` и `matplotlib`.
+### Binary Kurgan Mode
 
-```bash
-python -c "import numpy, pandas, torch, matplotlib; print('env ok')"
+| Class | Description |
+|---|---|
+| 0 | background |
+| 1 | any kurgan |
+
+Binary mask формируется явно:
+
+```python
+mask = np.isin(mask, [1, 2])
 ```
 
-## Multiclass Experiments
+где:
 
-Минимальный smoke test перед обучением:
+- `1` — whole kurgan;
+- `2` — damaged kurgan.
 
-```bash
-cd 02_unet_segmentation
+Другие археологические классы рассматриваются как hard negatives:
 
-python train.py \
-  --data-root "../datasets/segmentation_dataset" \
-  --out-dir "runs/smoke_test" \
-  --epochs 2 \
-  --batch-size 2 \
-  --split custom_regions \
-  --val-regions "042_ИЗБОРСК"
+- `3` — gorodishcha;
+- `4` — fortifikatsii;
+- `5` — arkhitektury.
+
+Если patch содержит только `3/4/5`, GT в binary mode остаётся пустым.
+
+---
+
+### Реализованный Pipeline
+
+```text
+02_unet_segmentation/
+├── datasets/
+├── models/
+├── losses/
+├── scripts/
+├── utils/
+├── assets/readme/
+├── runs/
+└── notebooks/
 ```
 
-Первый честный baseline:
+Поддерживаются:
 
-```bash
-python train.py \
-  --data-root "../datasets/segmentation_dataset" \
-  --out-dir "runs/baseline_all_modalities_ce_dice" \
-  --epochs 50 \
-  --batch-size 8 \
-  --lr 1e-3 \
-  --image-size 256 \
-  --split custom_regions \
-  --val-regions "042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА" \
-  --modalities Li Ae SpOr \
-  --class-weights "0.2,1.0,3.0"
-```
+- region-aware split;
+- custom validation regions;
+- modality filtering;
+- multiclass/binary modes;
+- BCE / Dice / BCE+Dice;
+- threshold sweep;
+- Kaggle experiments runner;
+- automatic evaluation;
+- prediction visualization.
 
-Полезные параметры:
+---
 
-```bash
-python train.py \
-  --data-root "../datasets/segmentation_dataset" \
-  --out-dir "runs/unet_kurgans_Li_only" \
-  --epochs 50 \
-  --batch-size 8 \
-  --lr 1e-3 \
-  --image-size 256 \
-  --split custom_regions \
-  --val-regions "042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА" \
-  --modalities Li \
-  --class-weights "0.2,1.0,3.0"
-```
+## Best Result
 
-Baseline с early stopping на 12 эпох без улучшения:
+| Metric | Value |
+|---|---|
+| Task | Binary Kurgan Segmentation |
+| Modality | LiDAR |
+| Model | UNetSmall |
+| Image Size | 256 |
+| Loss | BCE |
+| Threshold | 0.60 |
+| fg_iou | **0.6789** |
 
-```bash
-bash run_early_stopping_experiment.sh
-```
+# Main Results
 
-Для `custom_regions` скрипт проверяет, что список `--val-regions` не пустой, все регионы есть в `metadata.csv`, а train/val split не оказался пустым. В начале запуска он печатает найденные validation regions и количество samples по `region/modality`.
+| Experiment | Task | Modalities | Size | Loss | Best IoU |
+|---|---|---|---:|---|---:|
+| baseline_all_modalities | Multiclass | Li+Ae+SpOr | 256 | CE + Dice | 0.137 |
+| li_only | Multiclass | Li | 256 | CE + Dice | 0.243 |
+| binary_li_only | Binary | Li | 256 | BCE + Dice | 0.647 |
+| binary_li_no_dice | Binary | Li | 256 | BCE | 0.665 |
+| binary_li_no_dice + threshold sweep | Binary | Li | 256 | BCE | **0.679** |
+| binary_li_512_no_dice | Binary | Li | 512 | BCE | 0.630 |
 
-## Binary Experiments
+---
 
-В binary режиме маска становится:
 
-- `0` - background;
-- `1` - any kurgan, то есть `mask > 0` после ремапа исходных классов в `0/1/2`.
+# Key Findings
 
-Binary loss: `BCEWithLogitsLoss + DiceLossBinary`. Для него используются `--pos-weight`, `--bce-weight`, `--dice-weight`; `--class-weights` не нужен.
+- LiDAR значительно превосходит Ae и SpOr.
+- Binary segmentation стабильнее multiclass formulation.
+- BCE-only неожиданно оказался лучше BCE + Dice в binary mode.
+- Увеличение image size с 256 до 512 ухудшило качество.
+- Threshold calibration улучшила IoU с 0.665 до 0.679 без переобучения.
+- Другие археологические структуры (`3/4/5`) выступают hard negatives для binary kurgan segmentation.
 
-Пример Li-only binary:
+---
 
-```bash
-python train.py \
-  --task binary \
-  --data-root "../datasets/segmentation_dataset" \
-  --out-dir "runs/binary_li_only" \
-  --epochs 50 \
-  --patience 12 \
-  --batch-size 8 \
-  --lr 1e-3 \
-  --image-size 256 \
-  --split custom_regions \
-  --val-regions "007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км" \
-  --modalities Li \
-  --pos-weight 2.0 \
-  --bce-weight 1.0 \
-  --dice-weight 1.0
-```
+# Visual Results
 
-Binary Li+Ae:
+## Binary LiDAR Predictions
 
-```bash
-python train.py \
-  --task binary \
-  --data-root "../datasets/segmentation_dataset" \
-  --out-dir "runs/binary_li_ae_only" \
-  --epochs 50 \
-  --patience 12 \
-  --batch-size 8 \
-  --lr 1e-3 \
-  --image-size 256 \
-  --split custom_regions \
-  --val-regions "007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км" \
-  --modalities Li,Ae \
-  --pos-weight 2.0 \
-  --bce-weight 1.0 \
-  --dice-weight 1.0
-```
+![Binary Predictions](assets/readme/binary_li_shumgora_examples.png)
 
-Binary evaluation:
+*Good, medium and failure cases selected from validation predictions.*
 
-```bash
-python evaluate.py \
-  --task binary \
-  --data-root "../datasets/segmentation_dataset" \
-  --checkpoint "runs/binary_li_only/best_model.pth" \
-  --out-dir "runs/binary_li_only" \
-  --split custom_regions \
-  --val-regions "007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км" \
-  --modalities Li \
-  --pos-weight 2.0
-```
+---
 
-## Final UNet Binary Experiments
+## Multiclass LiDAR Predictions
 
-Финальная серия перед DeepLab проверяет Li-only binary модели на `512x512`:
+![Multiclass Predictions](assets/readme/multiclass_li_examples.png)
 
-```bash
-bash run_kaggle_experiments.sh
-```
+*Multiclass segmentation частично различает whole/damaged курганы, но страдает от сильного смешения классов и foreground overprediction по сравнению с binary formulation.*
 
-Активные эксперименты в скрипте:
+---
 
-| Эксперимент | Модальности | Image size | Loss | Pos weight | Цель |
-|---|---|---:|---|---:|---|
-| binary_li_512_no_dice | Li | 512 | BCE | 1.0 | Проверить высокий input без Dice |
-| binary_li_512_pos_weight_2 | Li | 512 | BCE | 2.0 | Проверить foreground weight 2 |
-| binary_li_512_ce_dice | Li | 512 | BCE + Dice | 2.0 | Проверить Dice на 512 |
-
-После обучения для каждого из этих экспериментов запускаются `evaluate.py` и `visualize_predictions.py`.
-
-Threshold sweep запускается отдельным шагом после обучения моделей.
 
 ## Threshold Sweep
 
-В binary segmentation стандартный threshold `0.5` не обязан быть оптимальным: модель выдаёт probability map, а финальная маска зависит от выбранного порога. Для уже обученных лучших UNet binary-моделей можно подобрать threshold по `fg_iou`.
+![Threshold Sweep](assets/readme/threshold_sweep_binary_li_no_dice.png)
 
-Пример локального запуска для `binary_li_no_dice`:
+*Threshold calibration позволила улучшить IoU без переобучения модели.*
+
+---
+
+## Failure Cases
+
+![Failure Cases](assets/readme/failure_cases_binary_li.png)
+
+*Типичные ошибки: noisy terrain, merged objects, tiny kurgans, а также hard negatives — другие археологические структуры, визуально похожие на курганы.*
+
+---
+
+# Multiclass Experiments
+
+## Baseline All Modalities
+
+```text
+val_mean_fg_iou = 0.137
+```
+
+Модель находила foreground, но плохо различала классы:
+
+| Metric | Value |
+|---|---|
+| val_fg_iou | 0.2989 |
+| whole_kurgan IoU | 0.052 |
+| damaged_kurgan IoU | 0.187 |
+
+Модель переобучалась:
+
+- train loss падал с `1.4365 -> 0.5713`;
+- val loss рос до `2.5–2.8`.
+
+Лучший checkpoint:
+
+- epoch 14;
+- `val_mean_fg_iou = 0.137`.
+
+---
+
+## LiDAR оказался главным источником сигнала
+
+| Experiment | mean_fg_iou |
+|---|---|
+| all modalities | 0.137 |
+| Li only | **0.243** |
+| Li + Ae | 0.148 |
+| Ae only | 0.057 |
+| SpOr only | 0.051 |
+
+Главный вывод:
+
+> LiDAR morphology содержит основной сигнал для archaeological mound segmentation.
+
+---
+
+## Почему Ae и SpOr деградировали качество
+
+### Ae
+
+```text
+val_mean_fg_iou = 0.0567
+```
+
+Причины:
+
+- нестабильные текстуры;
+- слабый рельеф;
+- курганы слишком малы;
+- сильный domain shift между регионами.
+
+---
+
+### SpOr
+
+```text
+val_mean_fg_iou = 0.0508
+```
+
+Причины:
+
+- низкое spatial resolution;
+- morphology курганов теряется.
+
+---
+
+## Dice помогал в multiclass режиме
+
+| Experiment | mean_fg_iou |
+|---|---|
+| CE + Dice | 0.137 |
+| BCE only | 0.116 |
+
+Dice действительно помогал small-object multiclass segmentation.
+
+---
+
+## Lower damaged weight улучшил баланс
+
+| Experiment | whole_iou | damaged_iou |
+|---|---:|---:|
+| baseline | 0.052 | 0.187 |
+| lower_damaged_weight | 0.131 | 0.133 |
+
+Модель стала меньше перекошена в damaged class.
+
+---
+
+# Binary Experiments
+
+Binary formulation резко улучшила качество.
+
+---
+
+## Лучший Binary Baseline
+
+| Experiment | fg_iou |
+|---|---|
+| binary_li_no_dice | **0.6651** |
+| binary_li_pos_weight_4 | 0.6620 |
+| binary_li_pos_weight_2 | 0.6616 |
+| binary_li_only | 0.6472 |
+
+Главный вывод:
+
+> Binary LiDAR segmentation оказалась значительно стабильнее multiclass segmentation.
+
+![Binary models comparison](assets/readme/binary_models_shumgora_comparison.png)
+
+---
+
+## Dice не дает стабильного прироста
+
+| Experiment | fg_iou |
+|---|---|
+| with Dice | 0.6472 |
+| no Dice | **0.6651** |
+
+Очень важный scientific insight.
+
+Вероятные причины:
+
+- binary task уже достаточно стабильна;
+- BCE лучше оптимизирует границы;
+- Dice переусредняет крупные объекты.
+
+---
+
+## Pos Weight почти ничего не дал
+
+| pos_weight | fg_iou |
+|---|---|
+| 1 | 0.647 |
+| 2 | 0.662 |
+| 4 | 0.662 |
+
+Foreground imbalance перестал быть главным bottleneck.
+
+---
+
+## Ae значительно ухудшает качество segmentation
+
+| Experiment | fg_iou |
+|---|---|
+| binary_li_only | 0.665 |
+| binary_li_ae_only | 0.396 |
+
+Это почти напрямую показывает:
+
+> Ae domain сильно отличается от LiDAR morphology.
+
+---
+
+## SpOr показал ограниченную пригодность для текущей постановки задачи.
+
+```text
+SpOr_fg_iou = 0.103
+```
+
+Практически unusable для текущей постановки.
+
+---
+
+# Image Size Experiments
+
+## 512 unexpectedly underperformed
+
+| Experiment | fg_iou |
+|---|---|
+| 256 no_dice | **0.6789** |
+| 512 no_dice | 0.6298 |
+
+Дополнительные эксперименты:
+
+| Experiment | fg_iou |
+|---|---|
+| binary_li_512_no_dice | 0.6260 |
+| binary_li_512_pos_weight_2 | 0.6153 |
+| binary_li_512_ce_dice | 0.6079 |
+
+---
+
+## Почему 512 хуже
+
+### 1. Patch context важнее detail
+
+При 512:
+
+- объект становится слишком маленьким относительно patch;
+- foreground signal размывается.
+
+### 2. UNetSmall не хватает capacity
+
+512 требует:
+
+- большего receptive field;
+- более сильного encoder;
+- richer feature hierarchy.
+
+---
+
+## Dice снова проигрывает
+
+| Experiment | fg_iou |
+|---|---|
+| 512 no dice | 0.626 |
+| 512 ce+dice | 0.608 |
+
+Теперь это становится стабильным паттерном.
+
+---
+
+# Threshold Sweep
+
+После обучения моделей был проведён threshold sweep:
+
+```text
+thresholds = 0.05 ... 0.95
+```
+
+Для каждого threshold вычислялись:
+
+- fg_iou;
+- fg_dice;
+- precision;
+- recall;
+- pixel accuracy.
+
+---
+
+## Лучший результат проекта
+
+| Model | Threshold | fg_iou |
+|---|---|---|
+| binary_li_no_dice | **0.60** | **0.6789** |
+
+Threshold tuning дал почти бесплатный improvement:
+
+```text
+0.6651 -> 0.6789
+```
+
+---
+
+## Calibration Insight
+
+Оптимальный threshold оказался ВЫШЕ 0.5:
+
+| Model | Best threshold |
+|---|---|
+| binary_li_no_dice | 0.60 |
+| binary_li_pos_weight_2 | 0.55 |
+| binary_li_pos_weight_4 | 0.55 |
+| binary_li_only | 0.75 |
+
+Это означает:
+
+> модель склонна пере-предсказывать archaeological morphology, что повышает recall, но создаёт false positives на hard negatives.
+
+---
+
+## Precision / Recall Tradeoff
+
+| Threshold | Precision | Recall |
+|---|---|---|
+| 0.50 | 0.708 | 0.909 |
+| 0.60 | 0.747 | 0.882 |
+| 0.75 | 0.803 | 0.797 |
+
+
+Threshold > 0.5 эффективно чистит false positives.
+
+---
+
+# Главный Scientific Result
+
+## Лучший pipeline проекта
+
+```text
+UNetSmall
+Binary segmentation
+LiDAR only
+256x256
+BCE only
+threshold = 0.60
+fg_iou = 0.6789
+```
+
+---
+
+# Project Structure
+
+```text
+02_unet_segmentation/
+├── datasets/
+├── models/
+├── losses/
+├── scripts/
+├── utils/
+├── notebooks/
+├── assets/readme/
+├── runs/
+└── archive/
+```
+
+---
+
+# Training
+
+## Binary LiDAR Baseline
 
 ```bash
-python threshold_sweep.py \
+python scripts/train.py \
+  --task binary \
+  --data-root "../datasets/segmentation_dataset" \
+  --out-dir "runs/binary_li_no_dice" \
+  --epochs 50 \
+  --batch-size 8 \
+  --lr 1e-3 \
+  --image-size 256 \
+  --split custom_regions \
+  --val-regions "007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км" \
+  --modalities Li \
+  --binary-positive-classes "1,2" \
+  --dice-weight 0.0
+```
+
+---
+
+# Threshold Sweep Usage
+
+```bash
+python scripts/threshold_sweep.py \
   --data-root "../datasets/segmentation_dataset" \
   --checkpoint "runs/binary_li_no_dice/best_model.pth" \
   --out-dir "runs/binary_li_no_dice" \
@@ -218,167 +581,87 @@ python threshold_sweep.py \
   --split custom_regions \
   --val-regions "007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км" \
   --modalities Li \
-  --thresholds "0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95"
+  --binary-positive-classes "1,2"
 ```
 
-Скрипт сохраняет в `--out-dir`:
+---
 
-- `threshold_sweep.csv` - метрики по каждому threshold;
-- `threshold_sweep.json` - лучший threshold по `fg_iou`;
-- `threshold_sweep.png` - графики `fg_iou`, `fg_dice`, `precision/recall`.
+# Kaggle
 
-Для визуальной проверки выбранного threshold:
+Эксперименты запускались на Kaggle GPU (`Tesla T4`).
 
-```bash
-python visualize_predictions.py \
-  --task binary \
-  --data-root "../datasets/segmentation_dataset" \
-  --checkpoint "runs/binary_li_no_dice/best_model.pth" \
-  --output "runs/binary_li_no_dice/prediction_examples_thr_best.png" \
-  --image-size 256 \
-  --split custom_regions \
-  --val-regions "007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км" \
-  --modalities Li \
-  --threshold 0.45
-```
-
-На Kaggle sweep для сохранённых моделей запускается отдельным режимом:
-
-```bash
-bash run_kaggle_experiments.sh threshold_sweeps
-```
-
-В этом режиме скрипт ищет checkpoint в двух местах:
-
-- сначала `RUN_ROOT/<experiment>/best_model.pth`;
-- затем `CHECKPOINT_ROOT/<experiment>.pth`.
-
-Для сохранённых Kaggle input-моделей можно задать:
-
-```bash
-CHECKPOINT_ROOT="/kaggle/input/datasets/matanerdy/kurgans-dataset" \
-bash run_kaggle_experiments.sh threshold_sweeps
-```
-
-Например, `binary_li_512_no_dice` будет найден как:
-
-```text
-/kaggle/input/datasets/matanerdy/kurgans-dataset/binary_li_512_no_dice.pth
-```
-
-Этот режим проверяет:
-
-- `binary_li_no_dice`;
-- `binary_li_pos_weight_2`;
-- `binary_li_pos_weight_4`;
-- `binary_li_only`;
-- `binary_li_512_no_dice`, если checkpoint существует.
-
-Если checkpoint не найден, скрипт печатает `[SKIP] checkpoint not found: ...` и продолжает. После каждого sweep он строит `prediction_examples_thr_best.png`, а в конце собирает `threshold_sweeps_summary.csv`.
-
-## План Экспериментов
-
-| Эксперимент | Модальности | Loss | Class weights | Цель |
-|---|---|---|---|---|
-| baseline_all | Li,Ae,SpOr | CE + Dice | 0.2,1.0,3.0 | Общая модель |
-| image_128 | Li,Ae,SpOr | CE + Dice | 0.2,1.0,3.0 | Проверить размер input |
-
-Binary-план:
-
-| Эксперимент | Модальности | Loss | Pos weight | Цель |
-|---|---|---|---|---|
-| binary_li_only | Li | BCE + Dice | 2.0 | Найти любой курган на LiDAR |
-| binary_li_ae_only | Li,Ae | BCE + Dice | 2.0 | Проверить связку LiDAR + аэрофото |
-| binary_all_modalities | Li,Ae,SpOr | BCE + Dice | 2.0 | Общая binary модель |
-| binary_li_no_dice | Li | BCE | 2.0 | Проверить влияние Dice |
-| binary_li_pos_weight_2 | Li | BCE + Dice | 2.0 | Базовый вес foreground |
-| binary_li_pos_weight_4 | Li | BCE + Dice | 4.0 | Усилить foreground |
-
-## Что сохраняется
-
-В `--out-dir` сохраняются:
-
-- `best_model.pth` - лучший чекпойнт по `val_mean_fg_iou` для multiclass и по `val_fg_iou` для binary;
-- `history.csv` - loss и метрики по эпохам отдельно для train/val;
-- `config.json` - параметры запуска и краткое описание split;
-- `train_split.csv`, `val_split.csv` - использованные выборки;
-- `prediction_examples.png` - несколько примеров image / GT / prediction / overlay.
-
-В `history.csv` есть общие метрики и срезы по модальностям, например:
-
-- `train_loss`, `val_loss`;
-- `train_fg_iou`, `val_fg_iou`;
-- `train_mean_fg_iou`, `val_mean_fg_iou`;
-- `val_iou_whole_kurgan`, `val_iou_damaged_kurgan`;
-- `val_Li_fg_iou`, `val_Ae_fg_iou`, `val_SpOr_fg_iou`, если такие модальности есть в split.
-
-Как читать метрики:
-
-- multiclass: основная метрика `val_mean_fg_iou`, это среднее IoU по `whole_kurgan` и `damaged_kurgan`; дополнительно смотреть `val_iou_whole_kurgan` и `val_iou_damaged_kurgan`;
-- binary: основная метрика `val_fg_iou`, это IoU foreground для любого кургана; дополнительно смотреть `val_fg_dice` и `val_pixel_accuracy`.
-
-## Оценка чекпойнта
-
-```bash
-python evaluate.py \
-  --data-root "../datasets/segmentation_dataset" \
-  --checkpoint "runs/baseline_all_modalities_ce_dice/best_model.pth" \
-  --out-dir "runs/baseline_all_modalities_ce_dice" \
-  --split custom_regions \
-  --val-regions "042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА" \
-  --modalities Li Ae SpOr \
-  --class-weights "0.2,1.0,3.0"
-```
-
-Результат печатается в stdout и дополнительно сохраняется в `evaluation.csv` и `evaluation.json`, если указан `--out-dir`.
-
-## Визуализация предсказаний
-
-```bash
-python visualize_predictions.py \
-  --data-root "../datasets/segmentation_dataset" \
-  --checkpoint "runs/baseline_all_modalities_ce_dice/best_model.pth" \
-  --output "runs/baseline_all_modalities_ce_dice/prediction_examples_eval.png" \
-  --split custom_regions \
-  --val-regions "042_ИЗБОРСК,044_ГОЧЕВО,033_МИЛОВИДОВО_0.1км,007_ЮШКОВО,047_КАЛМЫКИЯ_1,008_СЕЛЯНЕ,025_ШУМГОРА" \
-  --modalities Li Ae SpOr
-```
-
-## Запуск на Kaggle
-
-1. Включить Internet в настройках Kaggle notebook, чтобы notebook мог клонировать репозиторий через GitHub.
-2. Загрузить `segmentation_dataset` как отдельный Kaggle Dataset с путем `/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset`.
-3. Включить GPU в настройках notebook.
-4. Запустить [notebooks/kurgans_unet_kaggle.ipynb](../notebooks/kurgans_unet_kaggle.ipynb).
-5. После выполнения скачать `/kaggle/working/kurgans_runs.zip`.
-
-Внутри Kaggle notebook репозиторий клонируется или обновляется в `/kaggle/working/Geodata_Archaeology_CV`, а эксперименты запускаются через:
+## Train
 
 ```bash
 bash run_kaggle_experiments.sh
 ```
 
-Скрипт принимает переменные окружения:
+## Threshold Sweeps
 
-- `REPO_URL` - URL репозитория для Kaggle notebook, по умолчанию `https://github.com/MataNerdy/Geodata_Archaeology_CV.git`;
-- `BRANCH` - ветка репозитория для Kaggle notebook, по умолчанию `main`;
-- `DATA_ROOT` - путь к датасету, по умолчанию `/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset`;
-- `CHECKPOINT_ROOT` - путь к сохранённым `.pth` чекпойнтам для threshold sweep, по умолчанию `/kaggle/input/datasets/matanerdy/kurgans-dataset`;
-- `RUN_ROOT` - путь для результатов, по умолчанию `/kaggle/working/Geodata_Archaeology_CV/02_unet_segmentation/runs`;
-- `PYTHON_BIN` - Python executable, по умолчанию `python`.
+```bash
+bash run_kaggle_experiments.sh threshold_sweeps
+```
 
-`run_kaggle_experiments.sh` печатает версии Python/PyTorch, проверяет CUDA, запускает smoke test, затем третью серию final UNet binary experiments. Логи сохраняются в `RUN_ROOT/logs`.
+---
 
-Kaggle-скрипт сейчас запускает третью серию final UNet binary experiments с early stopping `--patience 12`:
+# Repository Hygiene
 
-- `binary_li_512_no_dice`
-- `binary_li_512_pos_weight_2`
-- `binary_li_512_ce_dice`
+В git intentionally НЕ хранятся:
 
-После каждого обучения запускаются `evaluate.py` и `visualize_predictions.py`. Все `evaluation.json` под `RUN_ROOT`, включая сохранённые результаты прошлых серий, собираются в `RUN_ROOT/experiments_summary.csv`.
+- `history.csv`
+- `train_split.csv`
+- `val_split.csv`
+- `logs/`
+- `smoke_test/`
+- `__pycache__/`
 
-## Следующие эксперименты
+README использует curated visual assets из:
 
-1. Сравнить несколько наборов validation regions для binary mode.
-2. Проверить `image-size 128` для лучшего binary-направления.
-3. Запустить threshold sweep для избранных binary-моделей и перенести лучший threshold в inference.
+```text
+assets/readme/
+```
+
+---
+
+# Future Work
+
+Следующий этап проекта:
+
+- DeepLabV3+
+- более сильные encoder’ы;
+- comparison against UNet baseline;
+- explicit archaeological multi-class segmentation;
+- region-aware curriculum;
+- candidate extraction + damage classification.
+
+---
+
+# Основные ML-инсайты
+
+- LiDAR значительно превосходит Ae и SpOr;
+- multiclass segmentation нестабильна на heterogeneous domains;
+- binary formulation резко улучшает качество;
+- Dice полезен в multiclass, но вреден в binary;
+- threshold tuning даёт measurable gain;
+- larger input size не всегда улучшает segmentation;
+- calibration иногда важнее смены архитектуры;
+- archaeological hard negatives — важная часть задачи.
+
+---
+
+# Ключевые технологии
+
+- Python
+- PyTorch
+- NumPy
+- Pandas
+- Rasterio
+- GeoPandas
+- Matplotlib
+- Kaggle
+- Semantic Segmentation
+- U-Net
+- BCEWithLogitsLoss
+- Dice Loss
+- Threshold Calibration
+- Archaeological LiDAR Analysis
