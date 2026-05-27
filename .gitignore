@@ -1,13 +1,21 @@
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
 .ipynb_checkpoints/
+*.ipynb_checkpoints/
 
 dataset/
 datasets/
 images/
 masks/
 runs/
+runs/**/logs/
+runs/**/smoke_test/
+runs/**/train_split.csv
+runs/**/val_split.csv
+runs/**/history.csv
 
 *.pth
 *.pt

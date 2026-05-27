@@ -12,7 +12,7 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-DATASET_DIR = PROJECT_ROOT / "datasets" / "dataset_multi_full_non_binary"
+DATASET_DIR = PROJECT_ROOT / "datasets" / "segmentation_dataset"
 
 IMG_DIR = DATASET_DIR / "images"
 MASK_DIR = DATASET_DIR / "masks"
