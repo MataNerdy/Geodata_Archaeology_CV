@@ -55,7 +55,7 @@ segmentation_dataset/
 ├── README.md
 ├── requirements.txt
 ├── configs/
-├── datasets/
+├── arch_datasets/
 ├── models/
 ├── losses/
 ├── utils/

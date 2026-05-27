@@ -7,7 +7,7 @@ from typing import Iterable
 
 import pandas as pd
 
-from datasets.archaeology_dataset import filter_modalities
+from arch_datasets.archaeology_dataset import filter_modalities
 
 
 def parse_regions(value: str | None) -> list[str] | None:

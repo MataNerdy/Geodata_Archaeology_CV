@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from datasets.archaeology_dataset import class_names_for_task
+from arch_datasets.archaeology_dataset import class_names_for_task
 from utils.metrics import logits_to_predictions
 
 

@@ -12,11 +12,27 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-for module_name in ("datasets", "losses", "models", "utils"):
-    module = sys.modules.get(module_name)
-    module_file = getattr(module, "__file__", "") if module is not None else ""
-    if module is not None and str(PROJECT_ROOT) not in str(module_file):
-        sys.modules.pop(module_name, None)
+
+def _force_local_package(package_name: str) -> None:
+    package_dir = PROJECT_ROOT / package_name
+    init_file = package_dir / "__init__.py"
+    if not package_dir.exists():
+        return
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        package_name,
+        init_file,
+        submodule_search_locations=[str(package_dir)],
+    )
+    if spec is None or spec.loader is None:
+        return
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[package_name] = module
+    spec.loader.exec_module(module)
+
+for _package_name in ("arch_datasets", "losses", "models", "utils"):
+    _force_local_package(_package_name)
 
 import numpy as np
 import pandas as pd
@@ -24,7 +40,7 @@ import torch
 import yaml
 from torch.utils.data import DataLoader
 
-from datasets.archaeology_dataset import (
+from arch_datasets.archaeology_dataset import (
     ArchaeologySegmentationDataset,
     class_names_for_task,
     load_metadata,
