@@ -1,0 +1,23 @@
+data_root: ../datasets/segmentation_dataset
+out_dir: runs/binary/deeplab_binary_li
+task: binary_kurgan
+encoder: resnet34
+encoder_weights:
+epochs: 50
+patience: 12
+batch_size: 8
+lr: 0.001
+weight_decay: 0.0001
+image_size: 256
+split: custom_regions
+val_regions: 007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км
+val_fraction: 0.2
+modalities: [Li]
+bce_weight: 1.0
+dice_weight: 0.0
+pos_weight: 1.0
+num_workers: 0
+seed: 42
+threshold: 0.5
+save_samples: 6
+

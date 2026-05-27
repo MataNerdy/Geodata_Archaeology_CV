@@ -1,0 +1,21 @@
+data_root: ../datasets/segmentation_dataset
+out_dir: runs/multiclass/deeplab_all_5_classes
+task: all_classes
+encoder: resnet34
+encoder_weights:
+epochs: 50
+patience: 12
+batch_size: 8
+lr: 0.001
+weight_decay: 0.0001
+image_size: 256
+split: stratified_region_holdout
+val_fraction: 0.2
+modalities: [Li]
+class_weights: [0.1, 1.0, 1.4, 1.4, 2.0, 2.0]
+ce_weight: 1.0
+dice_weight: 1.0
+num_workers: 0
+seed: 42
+threshold: 0.5
+save_samples: 6

@@ -1,0 +1,10 @@
+numpy
+pandas
+torch
+torchvision
+segmentation-models-pytorch
+PyYAML
+matplotlib
+opencv-python-headless
+shapely
+
