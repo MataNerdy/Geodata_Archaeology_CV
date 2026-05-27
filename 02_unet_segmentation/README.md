@@ -158,8 +158,6 @@ mask = np.isin(mask, [1, 2])
 - automatic evaluation;
 - prediction visualization.
 
----
-
 ## Best Result
 
 | Metric | Value |
@@ -172,7 +170,9 @@ mask = np.isin(mask, [1, 2])
 | Threshold | 0.60 |
 | fg_iou | **0.6789** |
 
-# Main Results
+---
+
+# Results
 
 | Experiment | Task | Modalities | Size | Loss | Best IoU |
 |---|---|---|---:|---|---:|
@@ -184,7 +184,6 @@ mask = np.isin(mask, [1, 2])
 | binary_li_512_no_dice | Binary | Li | 512 | BCE | 0.630 |
 
 ---
-
 
 # Key Findings
 
@@ -207,14 +206,13 @@ mask = np.isin(mask, [1, 2])
 
 ---
 
-## Multiclass LiDAR Predictions
+## Failure Cases
 
-![Multiclass Predictions](assets/readme/multiclass_li_examples.png)
+![Failure Cases](assets/readme/failure_cases_binary_li.png)
 
-*Multiclass segmentation частично различает whole/damaged курганы, но страдает от сильного смешения классов и foreground overprediction по сравнению с binary formulation.*
+*Типичные ошибки: noisy terrain, merged objects, tiny kurgans, а также hard negatives — другие археологические структуры, визуально похожие на курганы.*
 
 ---
-
 
 ## Threshold Sweep
 
@@ -222,13 +220,7 @@ mask = np.isin(mask, [1, 2])
 
 *Threshold calibration позволила улучшить IoU без переобучения модели.*
 
----
-
-## Failure Cases
-
-![Failure Cases](assets/readme/failure_cases_binary_li.png)
-
-*Типичные ошибки: noisy terrain, merged objects, tiny kurgans, а также hard negatives — другие археологические структуры, визуально похожие на курганы.*
+![Failure Cases after Threshold Sweep](assets/readme/prediction_examples_thr_best.png)
 
 ---
 
@@ -273,6 +265,13 @@ val_mean_fg_iou = 0.137
 Главный вывод:
 
 > LiDAR morphology содержит основной сигнал для archaeological mound segmentation.
+
+
+## Multiclass LiDAR Predictions
+
+![Multiclass Predictions](assets/readme/multiclass_li_examples.png)
+
+*Multiclass segmentation частично различает whole/damaged курганы, но страдает от сильного смешения классов и foreground overprediction по сравнению с binary formulation.*
 
 ---
 
