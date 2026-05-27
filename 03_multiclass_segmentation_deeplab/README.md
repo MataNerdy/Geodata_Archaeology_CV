@@ -170,6 +170,53 @@ python scripts/train.py \
   --out-dir runs/multiclass/deeplab_kurgan_multiclass_li
 ```
 
+## Multiclass Class-Weight Sweep
+
+В первых `kurgan_multiclass` экспериментах DeepLab показывал перекос в сторону класса `2 kurgany_povrezhdennye`: foreground часто заливался как damaged, а качество класса `1 kurgany_tselye` было ниже и нестабильнее. Для этого добавлен отдельный Kaggle режим подбора class weights для задачи `0/1/2`.
+
+Цель sweep не только максимизировать `mean_fg_iou`, но и найти более сбалансированную модель:
+
+- повысить `iou_kurgany_tselye`;
+- не обвалить `iou_kurgany_povrezhdennye`;
+- уменьшить collapse foreground в damaged class.
+
+Запуск на Kaggle:
+
+```bash
+cd /kaggle/working/Geodata_Archaeology_CV/03_multiclass_segmentation_deeplab
+
+RUN_MODE=multiclass_weight_sweep \
+DATA_ROOT=/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset/segmentation_dataset \
+RUN_ROOT=/kaggle/working/Geodata_Archaeology_CV/03_multiclass_segmentation_deeplab/runs \
+bash run_kaggle_experiments.sh
+```
+
+Эксперименты:
+
+| Experiment | Encoder | Class weights |
+|---|---|---|
+| `kurgan_multiclass_li_resnet50_w_02_2_1` | resnet50 | `0.2,2.0,1.0` |
+| `kurgan_multiclass_li_resnet50_w_02_3_1` | resnet50 | `0.2,3.0,1.0` |
+| `kurgan_multiclass_li_resnet50_w_01_3_1` | resnet50 | `0.1,3.0,1.0` |
+| `kurgan_multiclass_li_resnet50_w_02_2_08` | resnet50 | `0.2,2.0,0.8` |
+| `kurgan_multiclass_li_resnet34_w_02_3_1` | resnet34 | `0.2,3.0,1.0` |
+
+Summary сохраняется в:
+
+```text
+runs/multiclass_weight_sweep_summary.csv
+```
+
+Ключевые колонки:
+
+- `mean_fg_iou`
+- `iou_kurgany_tselye`
+- `iou_kurgany_povrezhdennye`
+- `dice_kurgany_tselye`
+- `dice_kurgany_povrezhdennye`
+- `pixel_accuracy`
+- `best_epoch`
+
 All 5 classes:
 
 ```bash
