@@ -15,7 +15,7 @@ scheduler_patience: 5
 grad_clip_norm: 1.0
 image_size: 256
 split: custom_regions
-val_regions: "005_ЛУБНО,012_ЛИХУША,008_СЕЛЯНЕ,011_РУНА,014_СТРЕКАЛОВКА,016_ЗОЛОТАРЕВКА,089_Костомаровское,044_ГОЧЕВО"
+val_regions: "005_ЛУБНО,012_ЛИХУША,008_СЕЛЯНЕ,011_РУНА,014_СТРЕКАЛОВКА,016_ЗОЛОТАРЕВКА,044_ГОЧЕВО"
 val_fraction: 0.2
 modalities: [Li, Ae, SpOr, Or]
 class_weights: [0.2, 1.0, 1.0, 1.4, 1.8, 1.8]
