@@ -197,8 +197,20 @@ def safe_iou(a, b) -> float:
 def draw_polygon(axis, polygon, color: str) -> None:
     """Draw one shapely polygon outline."""
 
-    coords = np.asarray(polygon.exterior.coords)
-    axis.add_patch(MplPolygon(coords, fill=False, edgecolor=color, linewidth=1.6))
+    if polygon.is_empty:
+        return
+    if polygon.geom_type == "Polygon":
+        coords = np.asarray(polygon.exterior.coords)
+        axis.add_patch(MplPolygon(coords, fill=False, edgecolor=color, linewidth=1.6))
+        return
+    if polygon.geom_type == "MultiPolygon":
+        for geom in polygon.geoms:
+            draw_polygon(axis, geom, color)
+        return
+    if polygon.geom_type == "GeometryCollection":
+        for geom in polygon.geoms:
+            if geom.geom_type in {"Polygon", "MultiPolygon", "GeometryCollection"}:
+                draw_polygon(axis, geom, color)
 
 
 def normalize_modalities(value: object) -> list[str] | None:
@@ -217,4 +229,3 @@ def normalize_modalities(value: object) -> list[str] | None:
 
 if __name__ == "__main__":
     main()
-
