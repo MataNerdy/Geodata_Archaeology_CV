@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 
 from arch_datasets.archaeology_dataset import class_names_for_task
 from utils.metrics import logits_to_predictions
+from utils.polygon_postprocessing import postprocess_prediction
 
 
 COLORS = np.array(
@@ -37,6 +38,8 @@ def save_prediction_grid(
     task: str,
     max_samples: int = 6,
     threshold: float = 0.5,
+    use_postprocessing: bool = False,
+    min_component_area: int = 8,
 ) -> None:
     """Save Image | GT | Prediction | Overlay grid."""
 
@@ -46,6 +49,19 @@ def save_prediction_grid(
     masks = batch["mask"]
     with torch.no_grad():
         preds = logits_to_predictions(model(images), task, threshold=threshold).cpu()
+    if use_postprocessing and task != "binary_kurgan":
+        preds = torch.from_numpy(
+            np.stack(
+                [
+                    postprocess_prediction(
+                        pred.numpy(),
+                        min_component_area=min_component_area,
+                        use_postprocessing=True,
+                    )
+                    for pred in preds
+                ]
+            )
+        ).long()
 
     n = min(max_samples, images.shape[0])
     fig, axes = plt.subplots(n, 4, figsize=(14, 3.4 * n))
@@ -145,4 +161,3 @@ def mask_overlay(mask: np.ndarray, task: str) -> np.ndarray:
     rgb = colorize_mask(mask, task)
     alpha = (mask > 0).astype(np.float32) * 0.7
     return np.dstack([rgb, alpha])
-

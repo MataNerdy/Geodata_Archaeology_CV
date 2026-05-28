@@ -33,6 +33,7 @@ for _package_name in ("arch_datasets", "losses", "models", "utils"):
     _force_local_package(_package_name)
 
 import pandas as pd
+import numpy as np
 import torch
 import yaml
 from torch.utils.data import DataLoader
@@ -40,6 +41,7 @@ from torch.utils.data import DataLoader
 from arch_datasets.archaeology_dataset import (
     ArchaeologySegmentationDataset,
     class_names_for_task,
+    filter_multiclass_metadata,
     load_metadata,
     num_classes_for_task,
 )
@@ -54,6 +56,8 @@ from utils.metrics import (
 )
 from utils.splits import make_split, parse_regions
 from utils.visualization import plot_confusion_matrix
+from utils.polygon_metrics import competition_like_f1, masks_to_geojson_features
+from utils.polygon_postprocessing import postprocess_prediction
 
 
 def parse_args() -> argparse.Namespace:
@@ -75,6 +79,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--modalities", nargs="*")
     parser.add_argument("--threshold", type=float)
     parser.add_argument("--num-workers", type=int)
+    parser.add_argument("--eval-mode", choices=["pixel", "object"], default="pixel")
+    parser.add_argument("--object-iou-threshold", type=float, default=0.3)
+    parser.add_argument("--min-component-area", type=int, default=8)
+    parser.add_argument("--use-postprocessing", action="store_true")
+    parser.add_argument("--use-morphology-opening", action="store_true")
+    parser.add_argument("--morphology-kernel-size", type=int, default=3)
+    parser.add_argument("--use-metadata-filtering", action="store_true")
+    parser.add_argument("--max-crop-size", type=float)
+    parser.add_argument("--max-objects-in-patch", type=int)
+    parser.add_argument("--allowed-classes")
+    parser.add_argument("--exclude-touches-border", action="store_true")
+    parser.add_argument("--min-foreground-pixels", type=int)
     return parser.parse_args()
 
 
@@ -96,8 +112,21 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    meta = load_metadata(config["data_root"])
+    if bool(config.get("use_metadata_filtering")):
+        before_count = len(meta)
+        meta = filter_multiclass_metadata(
+            meta,
+            allowed_classes=parse_str_list(config.get("allowed_classes")),
+            max_crop_size=config.get("max_crop_size"),
+            max_objects_in_patch=config.get("max_objects_in_patch"),
+            exclude_touches_border=bool(config.get("exclude_touches_border")),
+            min_foreground_pixels=config.get("min_foreground_pixels"),
+        )
+        print(f"Metadata filtering: {before_count} -> {len(meta)} samples")
+
     _, val_df = make_split(
-        load_metadata(config["data_root"]),
+        meta,
         split=config["split"],
         val_region=config.get("val_region"),
         val_regions=parse_regions(config.get("val_regions")),
@@ -125,8 +154,29 @@ def main() -> None:
     model.load_state_dict(checkpoint.get("model_state_dict", checkpoint))
     model.eval()
 
+    pred_masks, gt_masks, sample_ids, matrix = collect_predictions(model, loader, device, config)
+    class_names = {0: "background", 1: "any_kurgan"} if config["task"] == "binary_kurgan" else class_names_for_task(config["task"])
+
+    if config["eval_mode"] == "pixel":
+        metrics = save_pixel_evaluation(matrix, class_names, config, out_dir)
+    else:
+        metrics = save_object_evaluation(pred_masks, gt_masks, sample_ids, config, out_dir)
+    print(json.dumps(to_jsonable(metrics), indent=2, ensure_ascii=False))
+
+
+def collect_predictions(
+    model: torch.nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    config: dict[str, object],
+) -> tuple[list, list, list[str], torch.Tensor]:
+    """Collect predicted masks, GT masks and pixel confusion matrix."""
+
     num_classes = 2 if config["task"] == "binary_kurgan" else num_classes_for_task(config["task"])
     matrix = torch.zeros((num_classes, num_classes), dtype=torch.int64)
+    pred_masks = []
+    gt_masks = []
+    sample_ids: list[str] = []
     for batch in loader:
         images = batch["image"].to(device)
         targets = batch["mask"]
@@ -135,30 +185,89 @@ def main() -> None:
             config["task"],
             threshold=float(config["threshold"]),
         ).cpu()
+        if config["task"] != "binary_kurgan":
+            processed = []
+            for pred in preds.numpy():
+                processed.append(
+                    postprocess_prediction(
+                        pred,
+                        min_component_area=int(config.get("min_component_area", 8)),
+                        use_postprocessing=bool(config.get("use_postprocessing")),
+                        use_morphology_opening=bool(config.get("use_morphology_opening")),
+                        morphology_kernel_size=int(config.get("morphology_kernel_size", 3)),
+                    )
+                )
+            preds = torch.from_numpy(np.stack(processed)).long()
         matrix += confusion_matrix(preds, targets, num_classes)
+        pred_masks.extend(list(preds.numpy()))
+        gt_masks.extend(list(targets.numpy()))
+        sample_ids.extend([str(item) for item in batch["sample_id"]])
+    return pred_masks, gt_masks, sample_ids, matrix
+
+
+def save_pixel_evaluation(
+    matrix: torch.Tensor,
+    class_names: dict[int, str],
+    config: dict[str, object],
+    out_dir: Path,
+) -> dict[str, float]:
+    """Save pixel-level evaluation artifacts."""
 
     if config["task"] == "binary_kurgan":
         metrics = binary_metrics_from_confusion(matrix)
-        class_names = {0: "background", 1: "any_kurgan"}
     else:
-        class_names = class_names_for_task(config["task"])
         metrics = multiclass_metrics_from_confusion(matrix, class_names)
         plot_confusion_matrix(matrix, class_names, out_dir / "confusion_matrix.png")
 
     payload = {"metrics": metrics, "config": config, "confusion_matrix": matrix.tolist()}
-    with (out_dir / "evaluation.json").open("w", encoding="utf-8") as handle:
-        json.dump(to_jsonable(payload), handle, indent=2, ensure_ascii=False)
+    for filename in ("evaluation.json", "evaluation_pixel.json"):
+        with (out_dir / filename).open("w", encoding="utf-8") as handle:
+            json.dump(to_jsonable(payload), handle, indent=2, ensure_ascii=False)
     pd.DataFrame([metrics]).to_csv(out_dir / "evaluation.csv", index=False)
+    pd.DataFrame([metrics]).to_csv(out_dir / "evaluation_pixel.csv", index=False)
     if config["task"] != "binary_kurgan":
-        pd.DataFrame(per_class_rows(metrics, class_names)).to_csv(
-            out_dir / "per_class_iou.csv",
-            index=False,
-        )
-    pd.DataFrame(confusion_matrix_to_csv_rows(matrix, class_names)).to_csv(
-        out_dir / "confusion_matrix.csv",
-        index=False,
+        pd.DataFrame(per_class_rows(metrics, class_names)).to_csv(out_dir / "per_class_iou.csv", index=False)
+    pd.DataFrame(confusion_matrix_to_csv_rows(matrix, class_names)).to_csv(out_dir / "confusion_matrix.csv", index=False)
+    return metrics
+
+
+def save_object_evaluation(
+    pred_masks: list,
+    gt_masks: list,
+    sample_ids: list[str],
+    config: dict[str, object],
+    out_dir: Path,
+) -> dict[str, float]:
+    """Save object-level competition-like evaluation artifacts."""
+
+    pred_geojson = masks_to_geojson_features(pred_masks, sample_ids, min_area=float(config.get("min_component_area", 8)))
+    gt_geojson = masks_to_geojson_features(gt_masks, sample_ids, min_area=float(config.get("min_component_area", 8)))
+    weighted_f1, rows = competition_like_f1(
+        pred_geojson,
+        gt_geojson,
+        iou_threshold=float(config.get("object_iou_threshold", 0.3)),
     )
-    print(json.dumps(to_jsonable(metrics), indent=2, ensure_ascii=False))
+    tp = float(rows["tp"].sum())
+    fp = float(rows["fp"].sum())
+    fn = float(rows["fn"].sum())
+    precision = tp / (tp + fp + 1e-6)
+    recall = tp / (tp + fn + 1e-6)
+    f1 = 2 * precision * recall / (precision + recall + 1e-6)
+    metrics = {
+        "object_precision": precision,
+        "object_recall": recall,
+        "object_f1": f1,
+        "weighted_competition_f1": weighted_f1,
+        "object_iou_threshold": float(config.get("object_iou_threshold", 0.3)),
+    }
+    payload = {"metrics": metrics, "config": config, "per_class": rows.to_dict(orient="records")}
+    (out_dir / "evaluation_object.json").write_text(json.dumps(to_jsonable(payload), ensure_ascii=False, indent=2), encoding="utf-8")
+    (out_dir / "competition_metric.json").write_text(json.dumps(to_jsonable(payload), ensure_ascii=False, indent=2), encoding="utf-8")
+    pd.DataFrame([metrics]).to_csv(out_dir / "evaluation_object.csv", index=False)
+    rows.to_csv(out_dir / "competition_metric.csv", index=False)
+    (out_dir / "predictions_geojson.json").write_text(json.dumps(pred_geojson, ensure_ascii=False), encoding="utf-8")
+    (out_dir / "ground_truth_geojson.json").write_text(json.dumps(gt_geojson, ensure_ascii=False), encoding="utf-8")
+    return metrics
 
 
 def per_class_rows(
@@ -192,6 +301,16 @@ def normalize_modalities(value: object) -> list[str] | None:
         for item in value:
             parts.extend(str(item).split(","))
     return [part.strip() for part in parts if part.strip()] or None
+
+
+def parse_str_list(value: object) -> list[str] | None:
+    """Parse comma-separated strings."""
+
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value]
+    return [item.strip() for item in str(value).split(",") if item.strip()]
 
 
 if __name__ == "__main__":

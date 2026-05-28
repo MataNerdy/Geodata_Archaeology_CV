@@ -38,11 +38,12 @@ import numpy as np
 import pandas as pd
 import torch
 import yaml
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from arch_datasets.archaeology_dataset import (
     ArchaeologySegmentationDataset,
     class_names_for_task,
+    filter_multiclass_metadata,
     load_metadata,
     num_classes_for_task,
 )
@@ -92,6 +93,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int)
     parser.add_argument("--threshold", type=float)
     parser.add_argument("--save-samples", type=int)
+    parser.add_argument("--use-weighted-sampler", action="store_true", default=None)
+    parser.add_argument("--sampler-mode", default=None, choices=["class_name"])
+    parser.add_argument("--use-metadata-filtering", action="store_true", default=None)
+    parser.add_argument("--max-crop-size", type=float)
+    parser.add_argument("--max-objects-in-patch", type=int)
+    parser.add_argument("--allowed-classes")
+    parser.add_argument("--exclude-touches-border", action="store_true", default=None)
+    parser.add_argument("--min-foreground-pixels", type=int)
     return parser.parse_args()
 
 
@@ -106,6 +115,17 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     meta = load_metadata(config["data_root"])
+    if bool(config.get("use_metadata_filtering")):
+        before_count = len(meta)
+        meta = filter_multiclass_metadata(
+            meta,
+            allowed_classes=parse_str_list(config.get("allowed_classes")),
+            max_crop_size=config.get("max_crop_size"),
+            max_objects_in_patch=config.get("max_objects_in_patch"),
+            exclude_touches_border=bool(config.get("exclude_touches_border")),
+            min_foreground_pixels=config.get("min_foreground_pixels"),
+        )
+        print(f"Metadata filtering: {before_count} -> {len(meta)} samples")
     train_df, val_df = make_split(
         meta,
         split=config["split"],
@@ -119,7 +139,7 @@ def main() -> None:
     val_df.to_csv(out_dir / "val_split.csv", index=False)
     save_config(config, out_dir / "config_used.yaml")
 
-    train_loader = build_loader(train_df, config, shuffle=True)
+    train_loader = build_loader(train_df, config, shuffle=True, use_sampler=should_use_weighted_sampler(config))
     val_loader = build_loader(val_df, config, shuffle=False)
 
     device = get_device()
@@ -256,7 +276,12 @@ def run_epoch(
     return metrics
 
 
-def build_loader(meta: pd.DataFrame, config: dict[str, Any], shuffle: bool) -> DataLoader:
+def build_loader(
+    meta: pd.DataFrame,
+    config: dict[str, Any],
+    shuffle: bool,
+    use_sampler: bool = False,
+) -> DataLoader:
     """Build DataLoader from metadata and config."""
 
     dataset = ArchaeologySegmentationDataset(
@@ -265,13 +290,55 @@ def build_loader(meta: pd.DataFrame, config: dict[str, Any], shuffle: bool) -> D
         image_size=int(config["image_size"]),
         task=config["task"],
     )
+    sampler = build_weighted_sampler(dataset.meta, config) if use_sampler else None
     return DataLoader(
         dataset,
         batch_size=int(config["batch_size"]),
-        shuffle=shuffle,
+        shuffle=shuffle and sampler is None,
+        sampler=sampler,
         num_workers=int(config["num_workers"]),
         pin_memory=torch.cuda.is_available(),
     )
+
+
+def should_use_weighted_sampler(config: dict[str, Any]) -> bool:
+    """Return whether weighted sampler should be enabled."""
+
+    if config.get("use_weighted_sampler") is not None:
+        return bool(config.get("use_weighted_sampler"))
+    return config["task"] == "archaeology_5class"
+
+
+def build_weighted_sampler(
+    meta: pd.DataFrame,
+    config: dict[str, Any],
+) -> WeightedRandomSampler:
+    """Build notebook-style inverse-frequency sampler for rare archaeology classes."""
+
+    mode = config.get("sampler_mode") or "class_name"
+    if mode != "class_name":
+        raise ValueError(f"Unsupported sampler_mode: {mode}")
+    if "class_name" in meta.columns:
+        labels = meta["class_name"].astype(str)
+    else:
+        labels = infer_sample_labels_from_mask_pixels(meta)
+    counts = labels.value_counts().to_dict()
+    weights = labels.map(lambda label: 1.0 / max(counts[str(label)], 1)).astype(float).values
+    return WeightedRandomSampler(
+        weights=torch.as_tensor(weights, dtype=torch.double),
+        num_samples=len(weights),
+        replacement=True,
+    )
+
+
+def infer_sample_labels_from_mask_pixels(meta: pd.DataFrame) -> pd.Series:
+    """Infer a dominant foreground class from mask pixel count columns."""
+
+    pixel_cols = [col for col in meta.columns if col.startswith("mask_") and col.endswith("_pixels") and col != "mask_bg_pixels"]
+    if not pixel_cols:
+        return pd.Series(["unknown"] * len(meta), index=meta.index)
+    dominant = meta[pixel_cols].idxmax(axis=1)
+    return dominant.str.removeprefix("mask_").str.removesuffix("_pixels")
 
 
 def build_criterion(config: dict[str, Any]) -> torch.nn.Module:
@@ -320,6 +387,14 @@ def default_config() -> dict[str, Any]:
         "seed": 42,
         "threshold": 0.5,
         "save_samples": 6,
+        "use_weighted_sampler": None,
+        "sampler_mode": "class_name",
+        "use_metadata_filtering": False,
+        "max_crop_size": None,
+        "max_objects_in_patch": None,
+        "allowed_classes": None,
+        "exclude_touches_border": False,
+        "min_foreground_pixels": None,
     }
 
 
@@ -340,6 +415,8 @@ def resolve_config(args: argparse.Namespace) -> dict[str, Any]:
         config["class_weights"] = None
     else:
         config["pos_weight"] = None
+    if config["task"] == "archaeology_5class" and config.get("use_weighted_sampler") is None:
+        config["use_weighted_sampler"] = True
     return config
 
 
@@ -366,6 +443,16 @@ def parse_float_list(value: object) -> list[float] | None:
     if isinstance(value, (list, tuple)):
         return [float(item) for item in value]
     return [float(item.strip()) for item in str(value).split(",") if item.strip()]
+
+
+def parse_str_list(value: object) -> list[str] | None:
+    """Parse comma-separated strings."""
+
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value]
+    return [item.strip() for item in str(value).split(",") if item.strip()]
 
 
 def save_config(config: dict[str, Any], path: Path) -> None:

@@ -59,6 +59,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--modalities", nargs="*")
     parser.add_argument("--threshold", type=float)
     parser.add_argument("--max-samples", type=int, default=6)
+    parser.add_argument("--use-postprocessing", action="store_true")
+    parser.add_argument("--min-component-area", type=int, default=8)
     return parser.parse_args()
 
 
@@ -105,6 +107,8 @@ def main() -> None:
         task=config["task"],
         max_samples=int(args.max_samples),
         threshold=float(config["threshold"]),
+        use_postprocessing=bool(args.use_postprocessing),
+        min_component_area=int(args.min_component_area),
     )
     print(f"Saved predictions to {args.output}")
 

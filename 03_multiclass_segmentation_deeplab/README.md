@@ -286,6 +286,69 @@ Comparison grid:
 runs/multiclass/archaeology_5class_comparison.png
 ```
 
+## Archaeology-Aware Competition Pipeline
+
+Raw pixel IoU treats the task as flat semantic segmentation: every pixel mismatch is penalized equally. The original notebook behaved more like archaeological object extraction: it filtered noisy patches, oversampled rare object classes, polygonized masks, and matched objects by polygon IoU or centroid hits.
+
+This pipeline brings those notebook ideas back into the reproducible scripts:
+
+- `WeightedRandomSampler` for rare archaeology classes;
+- metadata filtering by crop size, object count, border touching, allowed classes and foreground pixels;
+- connected-components postprocessing;
+- polygon extraction;
+- object-level precision/recall/F1;
+- competition-like weighted F1 with class weights:
+  - `kurgany_povrezhdennye`: `27.8`
+  - `kurgany_tselye`: `22.2`
+  - `gorodishcha`: `16.7`
+  - `arkhitektury`: `11.1`
+  - `fortifikatsii`: `5.6`
+
+Run:
+
+```bash
+cd /kaggle/working/Geodata_Archaeology_CV/03_multiclass_segmentation_deeplab
+
+RUN_MODE=archaeology_5class_competition \
+DATA_ROOT=/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset/segmentation_dataset \
+RUN_ROOT=/kaggle/working/Geodata_Archaeology_CV/03_multiclass_segmentation_deeplab/runs \
+bash run_kaggle_experiments.sh
+```
+
+Experiments:
+
+| Experiment | Encoder | Modality | Evaluation |
+|---|---|---|---|
+| `archaeology_5class_resnet50_li_competition` | resnet50 | Li | pixel + object |
+| `archaeology_5class_resnet34_li_competition` | resnet34 | Li | pixel + object |
+
+Each run saves:
+
+- `evaluation_pixel.json`
+- `evaluation_object.json`
+- `competition_metric.json`
+- `polygons_preview.png`
+- `prediction_examples.png`
+- `matched_objects_visualization.png`
+
+Summary:
+
+```text
+runs/competition_summary.csv
+```
+
+Columns:
+
+- `experiment`
+- `encoder`
+- `mean_fg_iou`
+- `object_precision`
+- `object_recall`
+- `object_f1`
+- `weighted_competition_f1`
+
+The core hypothesis is that raw pixel IoU can severely underestimate archaeological segmentation quality, while object-level evaluation is closer to the real target: finding and separating archaeological objects.
+
 Single 5-class run:
 
 ```bash

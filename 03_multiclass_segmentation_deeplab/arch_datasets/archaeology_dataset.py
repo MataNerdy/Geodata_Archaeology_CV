@@ -109,6 +109,46 @@ def filter_modalities(meta: pd.DataFrame, modalities: Iterable[str] | None) -> p
     return meta[meta["modality"].astype(str).isin(wanted)].reset_index(drop=True)
 
 
+def filter_multiclass_metadata(
+    meta: pd.DataFrame,
+    allowed_classes: Iterable[str] | None = None,
+    max_crop_size: float | None = None,
+    max_objects_in_patch: int | None = None,
+    exclude_touches_border: bool = False,
+    min_foreground_pixels: int | None = None,
+) -> pd.DataFrame:
+    """Filter noisy or ambiguous multiclass patches using notebook-style metadata rules."""
+
+    filtered = meta.copy()
+    class_names = list(allowed_classes) if allowed_classes else [
+        "kurgany_tselye",
+        "kurgany_povrezhdennye",
+        "gorodishcha",
+        "fortifikatsii",
+        "arkhitektury",
+    ]
+    pixel_cols = [
+        f"mask_{class_name}_pixels"
+        for class_name in class_names
+        if f"mask_{class_name}_pixels" in filtered.columns
+    ]
+
+    if allowed_classes and "class_name" in filtered.columns:
+        filtered = filtered[filtered["class_name"].isin(class_names)].copy()
+    if max_crop_size is not None and "crop_size" in filtered.columns:
+        filtered = filtered[filtered["crop_size"] <= float(max_crop_size)].copy()
+    if max_objects_in_patch is not None and "n_objects_in_patch" in filtered.columns:
+        filtered = filtered[filtered["n_objects_in_patch"] <= int(max_objects_in_patch)].copy()
+    if exclude_touches_border and "touches_border" in filtered.columns:
+        filtered = filtered[filtered["touches_border"] == False].copy()  # noqa: E712
+    if min_foreground_pixels is not None and pixel_cols:
+        filtered = filtered[filtered[pixel_cols].sum(axis=1) >= int(min_foreground_pixels)].copy()
+
+    if filtered.empty:
+        raise ValueError("Metadata filtering removed all samples. Relax filtering options.")
+    return filtered.reset_index(drop=True)
+
+
 def num_classes_for_task(task: str) -> int:
     """Return output class count for a task."""
 

@@ -179,6 +179,59 @@ print(pd.DataFrame([row]).to_string(index=False))
 PY
 }
 
+append_competition_summary() {
+  local experiment="$1"
+  local encoder="$2"
+  local out_dir="$3"
+  local summary_path="$RUN_ROOT/competition_summary.csv"
+
+  EXPERIMENT="$experiment" \
+  ENCODER="$encoder" \
+  OUT_DIR="$out_dir" \
+  SUMMARY_PATH="$summary_path" \
+  "$PYTHON_BIN" - <<'PY'
+import json
+import os
+from pathlib import Path
+
+import pandas as pd
+
+experiment = os.environ["EXPERIMENT"]
+encoder = os.environ["ENCODER"]
+out_dir = Path(os.environ["OUT_DIR"])
+summary_path = Path(os.environ["SUMMARY_PATH"])
+
+pixel_path = out_dir / "evaluation_pixel.json"
+object_path = out_dir / "evaluation_object.json"
+if not pixel_path.exists():
+    raise FileNotFoundError(f"evaluation_pixel.json not found: {pixel_path}")
+if not object_path.exists():
+    raise FileNotFoundError(f"evaluation_object.json not found: {object_path}")
+
+pixel = json.loads(pixel_path.read_text(encoding="utf-8")).get("metrics", {})
+obj = json.loads(object_path.read_text(encoding="utf-8")).get("metrics", {})
+row = {
+    "experiment": experiment,
+    "encoder": encoder,
+    "mean_fg_iou": pixel.get("mean_fg_iou"),
+    "object_precision": obj.get("object_precision"),
+    "object_recall": obj.get("object_recall"),
+    "object_f1": obj.get("object_f1"),
+    "weighted_competition_f1": obj.get("weighted_competition_f1"),
+}
+summary_path.parent.mkdir(parents=True, exist_ok=True)
+if summary_path.exists():
+    df = pd.read_csv(summary_path)
+    df = df[df["experiment"] != experiment]
+    df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+else:
+    df = pd.DataFrame([row])
+df.to_csv(summary_path, index=False)
+print(f"Updated summary: {summary_path}")
+print(pd.DataFrame([row]).to_string(index=False))
+PY
+}
+
 run_multiclass_weight_experiment() {
   local name="$1"
   local encoder="$2"
@@ -259,9 +312,95 @@ run_archaeology_5class_experiment() {
     --data-root "$DATA_ROOT" \
     --output "$out_dir/prediction_examples.png" \
     --max-samples 8 \
+    --use-postprocessing \
+    --min-component-area 8 \
     2>&1 | tee "$RUN_ROOT/logs/${name}_visualize.log"
 
   append_archaeology_5class_summary "$name" "$encoder" "$modalities" "$out_dir"
+}
+
+run_archaeology_competition_experiment() {
+  local name="$1"
+  local encoder="$2"
+  local out_dir="$RUN_ROOT/multiclass/$name"
+
+  echo "Running $name..."
+  "$PYTHON_BIN" scripts/train.py \
+    --config configs/all_5_classes.yaml \
+    --data-root "$DATA_ROOT" \
+    --out-dir "$out_dir" \
+    --task archaeology_5class \
+    --modalities Li \
+    --encoder "$encoder" \
+    --class-weights "0.1,3.0,1.5,1.0,1.0,1.0" \
+    --epochs 50 \
+    --batch-size 8 \
+    --lr 1e-3 \
+    --patience 12 \
+    --image-size 256 \
+    --split custom_regions \
+    --val-regions "$VAL_REGIONS" \
+    --use-weighted-sampler \
+    --sampler-mode class_name \
+    --use-metadata-filtering \
+    --max-crop-size 2048 \
+    --max-objects-in-patch 40 \
+    --allowed-classes "kurgany_tselye,kurgany_povrezhdennye,gorodishcha,fortifikatsii,arkhitektury" \
+    --exclude-touches-border \
+    --min-foreground-pixels 1 \
+    --save-samples 8 \
+    2>&1 | tee "$RUN_ROOT/logs/${name}_train.log"
+
+  "$PYTHON_BIN" scripts/evaluate.py \
+    --checkpoint "$out_dir/best_model.pth" \
+    --data-root "$DATA_ROOT" \
+    --out-dir "$out_dir" \
+    --eval-mode pixel \
+    --use-metadata-filtering \
+    --max-crop-size 2048 \
+    --max-objects-in-patch 40 \
+    --allowed-classes "kurgany_tselye,kurgany_povrezhdennye,gorodishcha,fortifikatsii,arkhitektury" \
+    --exclude-touches-border \
+    --min-foreground-pixels 1 \
+    --use-postprocessing \
+    --min-component-area 8 \
+    2>&1 | tee "$RUN_ROOT/logs/${name}_evaluate_pixel.log"
+
+  "$PYTHON_BIN" scripts/evaluate.py \
+    --checkpoint "$out_dir/best_model.pth" \
+    --data-root "$DATA_ROOT" \
+    --out-dir "$out_dir" \
+    --eval-mode object \
+    --object-iou-threshold 0.3 \
+    --use-metadata-filtering \
+    --max-crop-size 2048 \
+    --max-objects-in-patch 40 \
+    --allowed-classes "kurgany_tselye,kurgany_povrezhdennye,gorodishcha,fortifikatsii,arkhitektury" \
+    --exclude-touches-border \
+    --min-foreground-pixels 1 \
+    --use-postprocessing \
+    --min-component-area 8 \
+    2>&1 | tee "$RUN_ROOT/logs/${name}_evaluate_object.log"
+
+  "$PYTHON_BIN" scripts/visualize_predictions.py \
+    --checkpoint "$out_dir/best_model.pth" \
+    --data-root "$DATA_ROOT" \
+    --output "$out_dir/prediction_examples.png" \
+    --max-samples 8 \
+    2>&1 | tee "$RUN_ROOT/logs/${name}_visualize.log"
+
+  "$PYTHON_BIN" scripts/visualize_object_matches.py \
+    --checkpoint "$out_dir/best_model.pth" \
+    --data-root "$DATA_ROOT" \
+    --output "$out_dir/matched_objects_visualization.png" \
+    --object-iou-threshold 0.3 \
+    --use-postprocessing \
+    --min-component-area 8 \
+    --max-samples 4 \
+    2>&1 | tee "$RUN_ROOT/logs/${name}_visualize_matches.log"
+
+  cp "$out_dir/matched_objects_visualization.png" "$out_dir/polygons_preview.png"
+  append_competition_summary "$name" "$encoder" "$out_dir"
 }
 
 run_full_series() {
@@ -325,6 +464,12 @@ run_archaeology_5class() {
     2>&1 | tee "$RUN_ROOT/logs/archaeology_5class_compare.log"
 }
 
+run_archaeology_5class_competition() {
+  rm -f "$RUN_ROOT/competition_summary.csv"
+  run_archaeology_competition_experiment "archaeology_5class_resnet50_li_competition" "resnet50"
+  run_archaeology_competition_experiment "archaeology_5class_resnet34_li_competition" "resnet34"
+}
+
 case "$RUN_MODE" in
   full)
     run_full_series
@@ -335,8 +480,11 @@ case "$RUN_MODE" in
   archaeology_5class)
     run_archaeology_5class
     ;;
+  archaeology_5class_competition)
+    run_archaeology_5class_competition
+    ;;
   *)
-    echo "Unknown RUN_MODE=$RUN_MODE. Use full, multiclass_weight_sweep, or archaeology_5class." >&2
+    echo "Unknown RUN_MODE=$RUN_MODE. Use full, multiclass_weight_sweep, archaeology_5class, or archaeology_5class_competition." >&2
     exit 2
     ;;
 esac
