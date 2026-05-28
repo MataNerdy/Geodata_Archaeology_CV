@@ -33,22 +33,19 @@ def make_split(
     """Create train/validation split and apply optional modality filtering."""
 
     split = split.lower()
+    meta = filter_modalities(meta, modalities)
     if split == "custom_regions":
         train_df, val_df = _custom_regions_split(meta, val_regions)
-        train_df = filter_modalities(train_df, modalities)
-        val_df = filter_modalities(val_df, modalities)
+    elif split in {"region", "leave-one-region-out", "loro"}:
+        train_df, val_df = _single_region_split(meta, val_region)
+    elif split == "random":
+        train_df, val_df = _random_split(meta, val_fraction, seed)
+    elif split == "stratified_region_holdout":
+        train_df, val_df = stratified_region_holdout(meta, val_fraction, seed)
     else:
-        meta = filter_modalities(meta, modalities)
-        if split in {"region", "leave-one-region-out", "loro"}:
-            train_df, val_df = _single_region_split(meta, val_region)
-        elif split == "random":
-            train_df, val_df = _random_split(meta, val_fraction, seed)
-        elif split == "stratified_region_holdout":
-            train_df, val_df = stratified_region_holdout(meta, val_fraction, seed)
-        else:
-            raise ValueError(
-                "Unknown split. Use region, custom_regions, random, or stratified_region_holdout."
-            )
+        raise ValueError(
+            "Unknown split. Use region, custom_regions, random, or stratified_region_holdout."
+        )
 
     if train_df.empty:
         raise ValueError("Train split is empty. Check split/modalities.")
