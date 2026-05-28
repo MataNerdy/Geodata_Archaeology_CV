@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--data-root")
     parser.add_argument("--output", default="prediction_examples.png")
-    parser.add_argument("--task", choices=["binary_kurgan", "kurgan_multiclass", "all_classes"])
+    parser.add_argument("--task", choices=["binary_kurgan", "kurgan_multiclass", "all_classes", "archaeology_5class"])
     parser.add_argument("--encoder")
     parser.add_argument("--encoder-weights")
     parser.add_argument("--image-size", type=int)

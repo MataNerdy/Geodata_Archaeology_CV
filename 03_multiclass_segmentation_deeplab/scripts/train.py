@@ -59,7 +59,7 @@ from utils.splits import make_split, parse_regions
 from utils.visualization import save_prediction_grid
 
 
-TASKS = ("binary_kurgan", "kurgan_multiclass", "all_classes")
+TASKS = ("binary_kurgan", "kurgan_multiclass", "all_classes", "archaeology_5class")
 
 
 def parse_args() -> argparse.Namespace:

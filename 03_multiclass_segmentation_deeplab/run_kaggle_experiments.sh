@@ -115,6 +115,70 @@ print(pd.DataFrame([row]).to_string(index=False))
 PY
 }
 
+append_archaeology_5class_summary() {
+  local experiment="$1"
+  local encoder="$2"
+  local modalities="$3"
+  local out_dir="$4"
+  local summary_path="$RUN_ROOT/archaeology_5class_summary.csv"
+
+  EXPERIMENT="$experiment" \
+  ENCODER="$encoder" \
+  MODALITIES="$modalities" \
+  OUT_DIR="$out_dir" \
+  SUMMARY_PATH="$summary_path" \
+  "$PYTHON_BIN" - <<'PY'
+import json
+import os
+from pathlib import Path
+
+import pandas as pd
+
+experiment = os.environ["EXPERIMENT"]
+encoder = os.environ["ENCODER"]
+modalities = os.environ["MODALITIES"]
+out_dir = Path(os.environ["OUT_DIR"])
+summary_path = Path(os.environ["SUMMARY_PATH"])
+
+evaluation_path = out_dir / "evaluation.json"
+run_summary_path = out_dir / "summary.json"
+if not evaluation_path.exists():
+    raise FileNotFoundError(f"evaluation.json not found: {evaluation_path}")
+
+evaluation = json.loads(evaluation_path.read_text(encoding="utf-8"))
+metrics = evaluation.get("metrics", evaluation)
+best_epoch = None
+if run_summary_path.exists():
+    run_summary = json.loads(run_summary_path.read_text(encoding="utf-8"))
+    best_epoch = run_summary.get("best_epoch")
+
+row = {
+    "experiment": experiment,
+    "encoder": encoder,
+    "modalities": modalities,
+    "mean_fg_iou": metrics.get("mean_fg_iou"),
+    "iou_kurgany_tselye": metrics.get("iou_kurgany_tselye"),
+    "iou_kurgany_povrezhdennye": metrics.get("iou_kurgany_povrezhdennye"),
+    "iou_gorodishcha": metrics.get("iou_gorodishcha"),
+    "iou_fortifikatsii": metrics.get("iou_fortifikatsii"),
+    "iou_arkhitektury": metrics.get("iou_arkhitektury"),
+    "pixel_accuracy": metrics.get("pixel_accuracy"),
+    "best_epoch": best_epoch,
+}
+
+summary_path.parent.mkdir(parents=True, exist_ok=True)
+if summary_path.exists():
+    df = pd.read_csv(summary_path)
+    df = df[df["experiment"] != experiment]
+    df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+else:
+    df = pd.DataFrame([row])
+df.to_csv(summary_path, index=False)
+print(f"Updated summary: {summary_path}")
+print(pd.DataFrame([row]).to_string(index=False))
+PY
+}
+
 run_multiclass_weight_experiment() {
   local name="$1"
   local encoder="$2"
@@ -152,6 +216,52 @@ run_multiclass_weight_experiment() {
     2>&1 | tee "$RUN_ROOT/logs/${name}_visualize.log"
 
   append_multiclass_weight_summary "$name" "$encoder" "$class_weights" "$out_dir"
+}
+
+run_archaeology_5class_experiment() {
+  local name="$1"
+  local encoder="$2"
+  local modalities="$3"
+  local out_dir="$RUN_ROOT/multiclass/$name"
+
+  echo "Running $name..."
+  local modality_args=()
+  if [[ "$modalities" != "all" ]]; then
+    modality_args=(--modalities "$modalities")
+  fi
+
+  "$PYTHON_BIN" scripts/train.py \
+    --config configs/all_5_classes.yaml \
+    --data-root "$DATA_ROOT" \
+    --out-dir "$out_dir" \
+    --task archaeology_5class \
+    "${modality_args[@]}" \
+    --encoder "$encoder" \
+    --class-weights "0.1,3.0,1.5,1.0,1.0,1.0" \
+    --epochs 50 \
+    --batch-size 8 \
+    --lr 1e-3 \
+    --patience 12 \
+    --image-size 256 \
+    --split custom_regions \
+    --val-regions "$VAL_REGIONS" \
+    --save-samples 8 \
+    2>&1 | tee "$RUN_ROOT/logs/${name}_train.log"
+
+  "$PYTHON_BIN" scripts/evaluate.py \
+    --checkpoint "$out_dir/best_model.pth" \
+    --data-root "$DATA_ROOT" \
+    --out-dir "$out_dir" \
+    2>&1 | tee "$RUN_ROOT/logs/${name}_evaluate.log"
+
+  "$PYTHON_BIN" scripts/visualize_predictions.py \
+    --checkpoint "$out_dir/best_model.pth" \
+    --data-root "$DATA_ROOT" \
+    --output "$out_dir/prediction_examples.png" \
+    --max-samples 8 \
+    2>&1 | tee "$RUN_ROOT/logs/${name}_visualize.log"
+
+  append_archaeology_5class_summary "$name" "$encoder" "$modalities" "$out_dir"
 }
 
 run_full_series() {
@@ -196,6 +306,25 @@ run_multiclass_weight_sweep() {
   run_multiclass_weight_experiment "kurgan_multiclass_li_resnet34_w_02_3_1" "resnet34" "0.2,3.0,1.0"
 }
 
+run_archaeology_5class() {
+  rm -f "$RUN_ROOT/archaeology_5class_summary.csv"
+  run_archaeology_5class_experiment "archaeology_5class_resnet34_li" "resnet34" "Li"
+  run_archaeology_5class_experiment "archaeology_5class_resnet50_li" "resnet50" "Li"
+  run_archaeology_5class_experiment "archaeology_5class_resnet34_all_modalities" "resnet34" "all"
+  run_archaeology_5class_experiment "archaeology_5class_resnet50_all_modalities" "resnet50" "all"
+
+  echo "Building 5-class model comparison grid..."
+  "$PYTHON_BIN" scripts/compare_5class_models.py \
+    --data-root "$DATA_ROOT" \
+    --checkpoints "$RUN_ROOT/multiclass/archaeology_5class_resnet34_li/best_model.pth,$RUN_ROOT/multiclass/archaeology_5class_resnet50_li/best_model.pth,$RUN_ROOT/multiclass/archaeology_5class_resnet34_all_modalities/best_model.pth,$RUN_ROOT/multiclass/archaeology_5class_resnet50_all_modalities/best_model.pth" \
+    --model-names "ResNet34 Li,ResNet50 Li,ResNet34 all,ResNet50 all" \
+    --output "$RUN_ROOT/multiclass/archaeology_5class_comparison.png" \
+    --split custom_regions \
+    --val-regions "$VAL_REGIONS" \
+    --max-samples 6 \
+    2>&1 | tee "$RUN_ROOT/logs/archaeology_5class_compare.log"
+}
+
 case "$RUN_MODE" in
   full)
     run_full_series
@@ -203,8 +332,11 @@ case "$RUN_MODE" in
   multiclass_weight_sweep)
     run_multiclass_weight_sweep
     ;;
+  archaeology_5class)
+    run_archaeology_5class
+    ;;
   *)
-    echo "Unknown RUN_MODE=$RUN_MODE. Use full or multiclass_weight_sweep." >&2
+    echo "Unknown RUN_MODE=$RUN_MODE. Use full, multiclass_weight_sweep, or archaeology_5class." >&2
     exit 2
     ;;
 esac

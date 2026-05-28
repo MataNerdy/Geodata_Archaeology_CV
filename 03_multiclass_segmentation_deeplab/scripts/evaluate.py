@@ -63,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--data-root")
     parser.add_argument("--out-dir")
-    parser.add_argument("--task", choices=["binary_kurgan", "kurgan_multiclass", "all_classes"])
+    parser.add_argument("--task", choices=["binary_kurgan", "kurgan_multiclass", "all_classes", "archaeology_5class"])
     parser.add_argument("--encoder")
     parser.add_argument("--encoder-weights")
     parser.add_argument("--image-size", type=int)
@@ -149,11 +149,35 @@ def main() -> None:
     with (out_dir / "evaluation.json").open("w", encoding="utf-8") as handle:
         json.dump(to_jsonable(payload), handle, indent=2, ensure_ascii=False)
     pd.DataFrame([metrics]).to_csv(out_dir / "evaluation.csv", index=False)
+    if config["task"] != "binary_kurgan":
+        pd.DataFrame(per_class_rows(metrics, class_names)).to_csv(
+            out_dir / "per_class_iou.csv",
+            index=False,
+        )
     pd.DataFrame(confusion_matrix_to_csv_rows(matrix, class_names)).to_csv(
         out_dir / "confusion_matrix.csv",
         index=False,
     )
     print(json.dumps(to_jsonable(metrics), indent=2, ensure_ascii=False))
+
+
+def per_class_rows(
+    metrics: dict[str, float],
+    class_names: dict[int, str],
+) -> list[dict[str, float | int | str]]:
+    """Convert per-class IoU/Dice metrics to a compact table."""
+
+    rows = []
+    for class_id, class_name in class_names.items():
+        rows.append(
+            {
+                "class_id": class_id,
+                "class_name": class_name,
+                "iou": metrics.get(f"iou_{class_name}"),
+                "dice": metrics.get(f"dice_{class_name}"),
+            }
+        )
+    return rows
 
 
 def normalize_modalities(value: object) -> list[str] | None:

@@ -42,7 +42,8 @@ segmentation_dataset/
 |---|---|---|
 | `binary_kurgan` | `mask = np.isin(mask, [1, 2])` | Любой курган vs background |
 | `kurgan_multiclass` | оставить `1/2`, классы `3/4/5 -> 0` | Разделить целые и поврежденные курганы |
-| `all_classes` | оставить `0..5` | Полная археологическая сегментация |
+| `archaeology_5class` | оставить исходные `0..5` | Полная археологическая сегментация |
+| `all_classes` | alias для `archaeology_5class` | Обратная совместимость |
 
 В `binary_kurgan` классы `3/4/5` считаются background / hard negatives.
 
@@ -108,7 +109,7 @@ Competition-like weighted F1: около `0.741`.
 2. threshold sweep
 3. сравнение с UNet `fg_iou=0.6789`
 4. `kurgan_multiclass` Li only
-5. `all_classes` DeepLab
+5. `archaeology_5class` DeepLab
 
 Smoke test:
 
@@ -217,7 +218,75 @@ runs/multiclass_weight_sweep_summary.csv
 - `pixel_accuracy`
 - `best_epoch`
 
-All 5 classes:
+## Full 5-Class DeepLab Pipeline
+
+Следующий этап после binary и `kurgan_multiclass`: настоящая archaeological segmentation на всех исходных классах `0..5`.
+
+Research questions:
+
+1. Помогает ли DeepLabV3+ для полноценной multiclass archaeological segmentation?
+2. Сохраняется ли преимущество LiDAR?
+3. Какие классы самые сложные?
+4. Улучшается ли separation между kurgans, gorodishcha и fortifikatsii?
+5. Дает ли ResNet50 meaningful gain относительно ResNet34?
+
+Стартовые class weights:
+
+```text
+0.1,3.0,1.5,1.0,1.0,1.0
+```
+
+Интерпретация:
+
+- background сильно занижен;
+- whole kurgan boosted;
+- damaged moderate;
+- other archaeology neutral.
+
+Запуск всей серии на Kaggle:
+
+```bash
+cd /kaggle/working/Geodata_Archaeology_CV/03_multiclass_segmentation_deeplab
+
+RUN_MODE=archaeology_5class \
+DATA_ROOT=/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset/segmentation_dataset \
+RUN_ROOT=/kaggle/working/Geodata_Archaeology_CV/03_multiclass_segmentation_deeplab/runs \
+bash run_kaggle_experiments.sh
+```
+
+Эксперименты:
+
+| Experiment | Encoder | Modalities |
+|---|---|---|
+| `archaeology_5class_resnet34_li` | resnet34 | Li |
+| `archaeology_5class_resnet50_li` | resnet50 | Li |
+| `archaeology_5class_resnet34_all_modalities` | resnet34 | Li,Ae,SpOr/other present modalities |
+| `archaeology_5class_resnet50_all_modalities` | resnet50 | Li,Ae,SpOr/other present modalities |
+
+Summary сохраняется в:
+
+```text
+runs/archaeology_5class_summary.csv
+```
+
+Ключевые колонки:
+
+- `mean_fg_iou`
+- `iou_kurgany_tselye`
+- `iou_kurgany_povrezhdennye`
+- `iou_gorodishcha`
+- `iou_fortifikatsii`
+- `iou_arkhitektury`
+- `pixel_accuracy`
+- `best_epoch`
+
+Comparison grid:
+
+```text
+runs/multiclass/archaeology_5class_comparison.png
+```
+
+Single 5-class run:
 
 ```bash
 python scripts/train.py \

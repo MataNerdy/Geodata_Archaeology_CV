@@ -31,6 +31,14 @@ TASK_CLASS_NAMES = {
         4: "fortifikatsii",
         5: "arkhitektury",
     },
+    "archaeology_5class": {
+        0: "background",
+        1: "kurgany_tselye",
+        2: "kurgany_povrezhdennye",
+        3: "gorodishcha",
+        4: "fortifikatsii",
+        5: "arkhitektury",
+    },
 }
 
 
@@ -215,4 +223,3 @@ class ArchaeologySegmentationDataset(Dataset):
         if self.normalize in {"none", None}:
             return image
         raise ValueError(f"Unknown normalize mode: {self.normalize}")
-

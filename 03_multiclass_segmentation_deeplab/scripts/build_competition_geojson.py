@@ -49,7 +49,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--data-root")
     parser.add_argument("--out-dir")
-    parser.add_argument("--task", choices=["all_classes"], default="all_classes")
+    parser.add_argument("--task", choices=["all_classes", "archaeology_5class"], default="archaeology_5class")
     parser.add_argument("--encoder")
     parser.add_argument("--encoder-weights")
     parser.add_argument("--image-size", type=int)
@@ -71,7 +71,7 @@ def main() -> None:
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
     config = dict(checkpoint.get("config", {}))
     config.update({key: value for key, value in vars(args).items() if value is not None})
-    config["task"] = "all_classes"
+    config["task"] = args.task
     config.setdefault("out_dir", str(Path(args.checkpoint).parent))
     config.setdefault("batch_size", 8)
     config.setdefault("val_fraction", 0.2)
@@ -91,14 +91,14 @@ def main() -> None:
         val_df,
         config["data_root"],
         image_size=int(config["image_size"]),
-        task="all_classes",
+        task=config["task"],
     )
     loader = DataLoader(dataset, batch_size=int(config["batch_size"]), shuffle=False, num_workers=0)
     model = build_model(
         encoder_name=config["encoder"],
         encoder_weights=config.get("encoder_weights"),
         in_channels=1,
-        classes=num_classes_for_task("all_classes"),
+        classes=num_classes_for_task(config["task"]),
     ).to(device)
     model.load_state_dict(checkpoint.get("model_state_dict", checkpoint))
     model.eval()
@@ -107,7 +107,7 @@ def main() -> None:
     gt_masks = []
     sample_ids = []
     for batch in loader:
-        preds = logits_to_predictions(model(batch["image"].to(device)), "all_classes").cpu().numpy()
+        preds = logits_to_predictions(model(batch["image"].to(device)), config["task"]).cpu().numpy()
         pred_masks.extend(list(preds))
         gt_masks.extend(list(batch["mask"].numpy()))
         sample_ids.extend([str(item) for item in batch["sample_id"]])
