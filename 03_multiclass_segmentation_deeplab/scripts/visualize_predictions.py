@@ -34,7 +34,12 @@ for _package_name in ("arch_datasets", "losses", "models", "utils"):
 import torch
 from torch.utils.data import DataLoader
 
-from arch_datasets.archaeology_dataset import ArchaeologySegmentationDataset, load_metadata, num_classes_for_task
+from arch_datasets.archaeology_dataset import (
+    ArchaeologySegmentationDataset,
+    filter_multiclass_metadata,
+    load_metadata,
+    num_classes_for_task,
+)
 from models.deeplab import build_model
 from utils.splits import make_split, parse_regions
 from utils.visualization import save_prediction_grid
@@ -61,6 +66,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-samples", type=int, default=6)
     parser.add_argument("--use-postprocessing", action="store_true")
     parser.add_argument("--min-component-area", type=int, default=8)
+    parser.add_argument("--use-metadata-filtering", action="store_true")
+    parser.add_argument("--max-crop-size", type=float)
+    parser.add_argument("--max-objects-in-patch", type=int)
+    parser.add_argument("--allowed-classes")
+    parser.add_argument("--exclude-touches-border", action="store_true")
+    parser.add_argument("--min-foreground-pixels", type=int)
     return parser.parse_args()
 
 
@@ -77,8 +88,18 @@ def main() -> None:
     config.setdefault("val_fraction", 0.2)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    meta = load_metadata(config["data_root"])
+    if bool(config.get("use_metadata_filtering")):
+        meta = filter_multiclass_metadata(
+            meta,
+            allowed_classes=parse_str_list(config.get("allowed_classes")),
+            max_crop_size=config.get("max_crop_size"),
+            max_objects_in_patch=config.get("max_objects_in_patch"),
+            exclude_touches_border=bool(config.get("exclude_touches_border")),
+            min_foreground_pixels=config.get("min_foreground_pixels"),
+        )
     _, val_df = make_split(
-        load_metadata(config["data_root"]),
+        meta,
         split=config["split"],
         val_region=config.get("val_region"),
         val_regions=parse_regions(config.get("val_regions")),
@@ -125,6 +146,16 @@ def normalize_modalities(value: object) -> list[str] | None:
         for item in value:
             parts.extend(str(item).split(","))
     return [part.strip() for part in parts if part.strip()] or None
+
+
+def parse_str_list(value: object) -> list[str] | None:
+    """Parse comma-separated strings."""
+
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value]
+    return [item.strip() for item in str(value).split(",") if item.strip()]
 
 
 if __name__ == "__main__":
