@@ -1,0 +1,35 @@
+data_root: ../datasets/segmentation_dataset
+out_dir: runs/multiclass/archaeology_5class_old_baseline_resnet34
+task: archaeology_5class
+encoder: resnet34
+encoder_weights:
+epochs: 80
+patience: 12
+batch_size: 16
+lr: 0.0001
+weight_decay: 0.0
+optimizer: adam
+scheduler: plateau
+scheduler_factor: 0.5
+scheduler_patience: 5
+grad_clip_norm: 1.0
+image_size: 256
+split: custom_regions
+val_regions: "005_ЛУБНО,012_ЛИХУША,008_СЕЛЯНЕ,011_РУНА,014_СТРЕКАЛОВКА,016_ЗОЛОТАРЕВКА,089_Костомаровское,044_ГОЧЕВО"
+val_fraction: 0.2
+modalities: [Li, Ae, SpOr, Or]
+class_weights: [0.2, 1.0, 1.0, 1.4, 1.8, 1.8]
+ce_weight: 0.7
+dice_weight: 0.3
+num_workers: 2
+seed: 42
+threshold: 0.5
+save_samples: 8
+use_weighted_sampler: false
+sampler_mode: class_name
+use_metadata_filtering: true
+max_crop_size: 2048
+max_objects_in_patch: 40
+allowed_classes: "kurgany_tselye,kurgany_povrezhdennye,gorodishcha,fortifikatsii,arkhitektury"
+exclude_touches_border: true
+min_foreground_pixels: 1

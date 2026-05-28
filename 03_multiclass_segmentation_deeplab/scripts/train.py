@@ -78,6 +78,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--lr", type=float)
     parser.add_argument("--weight-decay", type=float)
+    parser.add_argument("--optimizer", choices=["adamw", "adam"])
+    parser.add_argument("--scheduler", choices=["none", "plateau"])
+    parser.add_argument("--scheduler-factor", type=float)
+    parser.add_argument("--scheduler-patience", type=int)
+    parser.add_argument("--grad-clip-norm", type=float)
     parser.add_argument("--image-size", type=int)
     parser.add_argument("--split", choices=["region", "custom_regions", "random", "stratified_region_holdout"])
     parser.add_argument("--val-region")
@@ -154,11 +159,8 @@ def main() -> None:
         classes=num_classes_for_task(config["task"]),
     ).to(device)
     criterion = build_criterion(config).to(device)
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=float(config["lr"]),
-        weight_decay=float(config["weight_decay"]),
-    )
+    optimizer = build_optimizer(model, config)
+    scheduler = build_scheduler(optimizer, config)
 
     history: list[dict[str, float | int]] = []
     best_metric = -float("inf")
@@ -166,8 +168,8 @@ def main() -> None:
     patience = int(config["patience"])
 
     for epoch in range(1, int(config["epochs"]) + 1):
-        train_metrics = run_epoch(model, train_loader, criterion, optimizer, device, config["task"], "train")
-        val_metrics = run_epoch(model, val_loader, criterion, None, device, config["task"], "val")
+        train_metrics = run_epoch(model, train_loader, criterion, optimizer, device, config["task"], "train", config)
+        val_metrics = run_epoch(model, val_loader, criterion, None, device, config["task"], "val", config)
         row = {"epoch": epoch, **train_metrics, **val_metrics}
         history.append(row)
         pd.DataFrame(history).to_csv(out_dir / "history.csv", index=False)
@@ -178,6 +180,9 @@ def main() -> None:
             f"Epoch {epoch:03d}: train_loss={train_metrics['train_loss']:.4f} "
             f"val_loss={val_metrics['val_loss']:.4f} {selection_key}={current_metric:.4f}"
         )
+        if scheduler is not None:
+            scheduler.step(current_metric)
+
         if current_metric > best_metric:
             best_metric = current_metric
             best_epoch = epoch
@@ -232,6 +237,7 @@ def run_epoch(
     device: torch.device,
     task: str,
     split_name: str,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, float]:
     """Run train or eval epoch."""
 
@@ -252,6 +258,9 @@ def run_epoch(
             loss, loss_parts = criterion(logits, masks)
             if is_train:
                 loss.backward()
+                grad_clip_norm = None if config is None else config.get("grad_clip_norm")
+                if grad_clip_norm is not None and float(grad_clip_norm) > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=float(grad_clip_norm))
                 optimizer.step()
         preds = logits_to_predictions(logits.detach(), task).cpu()
         matrix += confusion_matrix(preds, masks.detach().cpu(), num_classes)
@@ -274,6 +283,38 @@ def run_epoch(
             )
         )
     return metrics
+
+
+def build_optimizer(model: torch.nn.Module, config: dict[str, Any]) -> torch.optim.Optimizer:
+    """Build optimizer from config."""
+
+    optimizer_name = str(config.get("optimizer", "adamw")).lower()
+    lr = float(config["lr"])
+    weight_decay = float(config.get("weight_decay", 0.0))
+    if optimizer_name == "adam":
+        return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    if optimizer_name == "adamw":
+        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    raise ValueError(f"Unsupported optimizer: {optimizer_name}")
+
+
+def build_scheduler(
+    optimizer: torch.optim.Optimizer,
+    config: dict[str, Any],
+) -> torch.optim.lr_scheduler.ReduceLROnPlateau | None:
+    """Build optional learning-rate scheduler."""
+
+    scheduler_name = str(config.get("scheduler", "none")).lower()
+    if scheduler_name in {"", "none", "null"}:
+        return None
+    if scheduler_name == "plateau":
+        return torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="max",
+            factor=float(config.get("scheduler_factor", 0.5)),
+            patience=int(config.get("scheduler_patience", 5)),
+        )
+    raise ValueError(f"Unsupported scheduler: {scheduler_name}")
 
 
 def build_loader(
@@ -372,6 +413,11 @@ def default_config() -> dict[str, Any]:
         "batch_size": 4,
         "lr": 1e-3,
         "weight_decay": 1e-4,
+        "optimizer": "adamw",
+        "scheduler": "none",
+        "scheduler_factor": 0.5,
+        "scheduler_patience": 5,
+        "grad_clip_norm": None,
         "image_size": 256,
         "split": "custom_regions",
         "val_region": None,
