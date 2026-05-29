@@ -1,0 +1,36 @@
+data_root: ../datasets/segmentation_dataset
+out_dir: runs/multiclass/old_recipe_resnet34_all_research_split_v1
+task: archaeology_5class
+encoder: resnet34
+encoder_weights:
+epochs: 80
+patience: 12
+batch_size: 16
+lr: 0.0001
+weight_decay: 0.0
+optimizer: adam
+scheduler: plateau
+scheduler_factor: 0.5
+scheduler_patience: 5
+grad_clip_norm: 1.0
+image_size: 256
+split: frozen
+train_split_csv: splits/archaeology_5class_research_split_v1/train_split.csv
+val_split_csv: splits/archaeology_5class_research_split_v1/val_split.csv
+val_fraction: 0.2
+modalities: [Li, Ae, SpOr, Or]
+class_weights: [0.2, 1.0, 1.0, 1.4, 1.8, 1.8]
+ce_weight: 0.7
+dice_weight: 0.3
+num_workers: 2
+seed: 42
+threshold: 0.5
+save_samples: 8
+use_weighted_sampler: false
+sampler_mode: class_name
+use_metadata_filtering: false
+max_crop_size:
+max_objects_in_patch:
+allowed_classes:
+exclude_touches_border: false
+min_foreground_pixels:

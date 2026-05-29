@@ -76,24 +76,100 @@ segmentation_dataset/
 
 Все эксперименты используют `in_channels=1`, потому что Li/Ae/SpOr patches хранятся как одноканальные `.npy`.
 
-## External Reference Checkpoint из Notebook
+## Research Path and Results
 
-В notebook был зафиксирован внешний reference checkpoint `deeplab_5class_43_best.pth`. Это не reproduced old baseline, а отдельный reference result для ориентира.
+Этот модуль развивался как продолжение `02_unet_segmentation`: сначала был проверен сильный binary UNet для курганов, затем DeepLabV3+ был перенесен на те же данные и постепенно расширен до полноценной 5-class archaeological segmentation.
 
-Reported per-class IoU для external checkpoint:
+### 1. Binary Kurgan Baseline
 
-| Class | IoU |
-|---|---:|
-| background | 0.949 |
-| kurgany_tselye | 0.714 |
-| kurgany_povrezhdennye | 0.767 |
-| gorodishcha | 0.824 |
-| fortifikatsii | 0.594 |
-| arkhitektury | 0.671 |
+Первый контрольный вопрос: может ли DeepLabV3+ догнать лучший UNet на задаче `any kurgan vs background`?
 
-Competition-like weighted F1 для external checkpoint: `0.7411`.
+| Model | Task | Modality | Input | Key setting | Metric |
+|---|---|---|---:|---|---:|
+| UNetSmall | binary kurgan | Li | 256 | BCE, threshold `0.60` | fg IoU `0.6789` |
+| DeepLabV3+ ResNet50 | binary kurgan | Li | 256 | BCE/Dice experiments | fg IoU `0.6759` |
 
-Веса классов для polygon F1:
+Вывод: DeepLab почти сравнялся с UNet на binary kurgan detection, но не дал явного преимущества. Поэтому дальнейшая ценность DeepLab проверялась не только на binary mask, а на разделении классов и object-level extraction.
+
+### 2. Kurgan Multiclass: Whole vs Damaged
+
+Следующий вопрос: сможет ли DeepLab лучше разделить `kurgany_tselye` и `kurgany_povrezhdennye`?
+
+Первые `kurgan_multiclass` runs показали collapse в damaged class: foreground часто заливался как поврежденный курган. После class-weight sweep лучший reproducible config стал:
+
+```text
+DeepLabV3+ / ResNet50 / Li / class_weights = 0.2,3.0,1.0
+```
+
+| Run | whole IoU | damaged IoU | mean_fg_iou |
+|---|---:|---:|---:|
+| baseline ResNet50 | unstable / lower | damaged-dominant | 0.239 |
+| weighted ResNet50 | 0.391 | 0.287 | 0.339 |
+
+Вывод: class weights заметно улучшают balance между whole/damaged, но задача остается сложной: pixel segmentation alone плохо отражает качество поиска объектов.
+
+### 3. Full 5-Class Segmentation
+
+Затем pipeline был расширен до исходных классов `0..5`:
+
+```text
+0 background
+1 kurgany_tselye
+2 kurgany_povrezhdennye
+3 gorodishcha
+4 fortifikatsii
+5 arkhitektury
+```
+
+Первые clean 5-class runs оказались слабыми по pixel IoU. Это привело к важному повороту: археологическая задача ближе к object extraction, чем к pixel-perfect segmentation. Поэтому в pipeline были возвращены notebook-style идеи:
+
+- metadata filtering;
+- object-level polygon extraction;
+- connected component cleanup;
+- competition-like weighted F1;
+- confidence / postprocessing sweep.
+
+### 4. Object-Aware Evaluation
+
+Сравнение pixel metrics и object metrics показало, что они могут расходиться. На одном и том же семействе моделей более высокий pixel IoU не всегда означает лучший object-level score.
+
+| Model / run | Split | Pixel mean_fg_iou | Object F1 | Weighted F1 |
+|---|---|---:|---:|---:|
+| clean competition ResNet50 Li | current Li validation | 0.1517 | 0.4000 | 0.3346 |
+| reproduced old baseline ResNet34 | old-style split/filtering | 0.1244 | 0.5538 | 0.4488 |
+| reproduced old baseline ResNet34 | current all-modality validation | 0.2864 | 0.6857 | 0.5251 |
+| reproduced old baseline ResNet34 | current Li-only validation | 0.4012 | 0.7804 | 0.5186 |
+
+Вывод: old baseline имеет не лучший flat pixel score, но заметно лучший object-level F1. Это подтверждает основную research-гипотезу проекта: для археологических объектов важна не только попиксельная маска, но и способность выделять корректные объекты с хорошим precision/recall balance.
+
+### 5. Collected Model Evaluation
+
+Для финального сравнения все собранные 5-class checkpoints были прогнаны на едином validation split через `scripts/evaluate_collected_models.py`. В итоговый portfolio narrative включены только reproducible project runs, без внешнего checkpoint как целевой модели.
+
+Лучшие результаты среди project checkpoints:
+
+| Model | Eval set | mean_fg_iou | Object F1 | Weighted F1 |
+|---|---|---:|---:|---:|
+| old baseline ResNet34 | all modalities | 0.2864 | 0.6857 | 0.5251 |
+| old baseline ResNet34 | Li only | 0.4012 | 0.7804 | 0.5186 |
+| ResNet34 Li competition | Li only | 0.1564 | 0.5361 | 0.4335 |
+| ResNet50 Li | Li only | 0.1382 | 0.4122 | 0.4023 |
+| ResNet34 all modalities | all modalities | 0.0737 | 0.5340 | 0.4172 |
+
+Postprocessing sweep дополнительно показал, что слабые noisy-модели можно заметно улучшить object-aware cleanup:
+
+| Model | Raw weighted F1 | Best postprocess weighted F1 | Best config |
+|---|---:|---:|---|
+| old baseline ResNet34, all | 0.5251 | 0.5438 | confidence `0.40`, min area `128`, no opening |
+| old baseline ResNet34, Li | 0.5186 | 0.5249 | confidence `0.00`, min area `32`, no opening |
+| ResNet50 Li competition | 0.3346 | 0.4985 | confidence `0.50`, min area `256`, no opening |
+| ResNet34 Li | 0.3414 | 0.4963 | confidence `0.10`, min area `256`, no opening |
+
+Итоговый вывод: лучшая воспроизводимая линия проекта для 5-class сейчас идет через old-style ResNet34 baseline + object-aware evaluation/postprocessing. DeepLab полезен не как простой replacement для UNet, а как часть pipeline для archaeological object extraction.
+
+### Competition Weights
+
+Object-level weighted F1 использует веса классов:
 
 | Class | Weight |
 |---|---:|
@@ -102,61 +178,6 @@ Competition-like weighted F1 для external checkpoint: `0.7411`.
 | gorodishcha | 16.7 |
 | arkhitektury | 11.1 |
 | fortifikatsii | 5.6 |
-
-## Reproduced Old Baseline
-
-`all_class_baseline.ipynb` не воспроизводит `0.7411`, но дает важный old baseline `archaeology_5class_old_baseline_resnet34`.
-
-Конфиг old baseline:
-
-| Parameter | Value |
-|---|---|
-| task | `archaeology_5class` |
-| encoder | `resnet34` |
-| encoder weights | `None` |
-| optimizer | Adam |
-| lr | `1e-4` |
-| batch size | `16` |
-| epochs / patience | `80 / 12` |
-| scheduler | ReduceLROnPlateau, factor `0.5`, patience `5` |
-| grad clip | `1.0` |
-| class weights | `0.2,1.0,1.0,1.4,1.8,1.8` |
-| loss weights | CE `0.7` + Dice `0.3` |
-| weighted sampler | off |
-| metadata filtering | on |
-| modalities | `Li,Ae,SpOr,Or` |
-| val regions | `005_ЛУБНО,012_ЛИХУША,008_СЕЛЯНЕ,011_РУНА,014_СТРЕКАЛОВКА,016_ЗОЛОТАРЕВКА,044_ГОЧЕВО` |
-
-Old baseline metrics:
-
-| Metric | Value |
-|---|---:|
-| best val_mean_fg_iou | 0.1565 at epoch 36 |
-| pixel mean_fg_iou | 0.1244 |
-| object F1 | 0.5538 |
-| weighted competition F1 | 0.4488 |
-
-Comparison:
-
-| Model | Split | Pixel mean_fg_iou | Object F1 | Weighted F1 |
-|---|---|---:|---:|---:|
-| current clean competition resnet50 Li | competition custom regions, Li only | 0.1517 | 0.4000 | 0.3346 |
-| old_baseline_resnet34 | old baseline custom regions + metadata filtering | 0.1244 | 0.5538 | 0.4488 |
-| external `deeplab_5class_43_best` checkpoint | external notebook reference split | high per-class IoU | not reported separately | 0.7411 |
-
-Old baseline has worse pixel IoU than the clean competition ResNet50 run, but better object-level F1. This supports the main archaeology-aware finding: object metrics are highly sensitive to split, postprocessing and precision/recall balance, and can tell a different story than flat pixel segmentation.
-
-Artifacts:
-
-```text
-runs/multiclass/archaeology_5class_old_baseline_resnet34/
-├── summary.json
-├── evaluation.csv
-├── evaluation_object.csv
-└── competition_metric.csv
-
-runs/multiclass/archaeology_5class_old_baseline_comparison.csv
-```
 
 ## Result
 
@@ -496,7 +517,73 @@ runs/collect_models_eval/
     └── postprocess_sweep.png
 ```
 
-Итоговая цель этого блока: выбрать логичную финальную 5-class модель для research chain, сравнивая Li-only, all-modalities, old baseline и external checkpoint на одной validation выборке.
+Итоговая цель этого блока: выбрать логичную финальную 5-class модель для research chain, сравнивая Li-only, all-modalities и old baseline на одной validation выборке.
+
+
+## Frozen Research Split
+
+Для финальной серии `archaeology_5class` split должен создаваться один раз и дальше только читаться из CSV. Это защищает от тихого подбора validation через повторный `n_trials=5000`.
+
+Фиксированный порядок:
+
+```text
+raw metadata
+↓
+metadata filtering
+↓
+make_region_holdout_split
+↓
+save train_split.csv / val_split.csv
+↓
+all experiments use --split frozen
+```
+
+Создать split один раз:
+
+```bash
+python scripts/create_research_split.py \
+  --data-root ../datasets/segmentation_dataset \
+  --out-dir splits/archaeology_5class_research_split_v1
+```
+
+Скрипт использует notebook-style search:
+
+```text
+val_frac = 0.2
+group_col = region
+strat_cols = class_name,modality
+min_val_per_class = 5
+random_state = 42
+n_trials = 5000
+```
+
+После создания split не пересчитывается. Для обучения:
+
+```bash
+python scripts/train.py \
+  --config configs/archaeology_5class_research_split_v1.yaml
+```
+
+Или явно:
+
+```bash
+python scripts/train.py \
+  --config configs/archaeology_5class_old_baseline.yaml \
+  --split frozen \
+  --train-split-csv splits/archaeology_5class_research_split_v1/train_split.csv \
+  --val-split-csv splits/archaeology_5class_research_split_v1/val_split.csv
+```
+
+Для Li-only ablation используется тот же frozen split, но с фильтром модальности:
+
+```bash
+python scripts/train.py \
+  --config configs/archaeology_5class_research_split_v1.yaml \
+  --out-dir runs/multiclass/old_recipe_resnet34_li_research_split_v1 \
+  --modalities Li
+```
+
+Важно: в `split=frozen` metadata filtering в train/evaluate выключается, потому что split CSV уже должен быть создан после filtering.
 
 ## Kaggle
 
@@ -556,7 +643,7 @@ Threshold sweep сохраняет:
 - checkpoints в `runs/**/*.pth`
 - logs
 - smoke tests
-- split CSV
+- run-local split CSV under `runs/**`; frozen research splits under `splits/` are protocol artifacts
 - `history.csv`
 
 Curated изображения для README можно хранить в `assets/readme/`. Сырые результаты экспериментов остаются в `runs/` и скачиваются из Kaggle архивом.

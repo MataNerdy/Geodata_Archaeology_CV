@@ -84,10 +84,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scheduler-patience", type=int)
     parser.add_argument("--grad-clip-norm", type=float)
     parser.add_argument("--image-size", type=int)
-    parser.add_argument("--split", choices=["region", "custom_regions", "random", "stratified_region_holdout"])
+    parser.add_argument("--split", choices=["region", "custom_regions", "random", "stratified_region_holdout", "frozen"])
     parser.add_argument("--val-region")
     parser.add_argument("--val-regions")
     parser.add_argument("--val-fraction", type=float)
+    parser.add_argument("--train-split-csv")
+    parser.add_argument("--val-split-csv")
     parser.add_argument("--modalities", nargs="*")
     parser.add_argument("--class-weights")
     parser.add_argument("--ce-weight", type=float)
@@ -139,6 +141,8 @@ def main() -> None:
         val_fraction=float(config["val_fraction"]),
         seed=int(config["seed"]),
         modalities=config.get("modalities"),
+        train_split_csv=config.get("train_split_csv"),
+        val_split_csv=config.get("val_split_csv"),
     )
     train_df.to_csv(out_dir / "train_split.csv", index=False)
     val_df.to_csv(out_dir / "val_split.csv", index=False)
@@ -423,6 +427,8 @@ def default_config() -> dict[str, Any]:
         "val_region": None,
         "val_regions": "007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км",
         "val_fraction": 0.2,
+        "train_split_csv": None,
+        "val_split_csv": None,
         "modalities": ["Li"],
         "class_weights": None,
         "ce_weight": 1.0,

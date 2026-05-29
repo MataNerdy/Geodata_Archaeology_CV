@@ -76,6 +76,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--val-region")
     parser.add_argument("--val-regions")
     parser.add_argument("--val-fraction", type=float)
+    parser.add_argument("--train-split-csv")
+    parser.add_argument("--val-split-csv")
     parser.add_argument("--modalities", nargs="*")
     parser.add_argument("--threshold", type=float)
     parser.add_argument("--num-workers", type=int)
@@ -132,6 +134,8 @@ def main() -> None:
         val_regions=parse_regions(config.get("val_regions")),
         val_fraction=float(config["val_fraction"]),
         modalities=normalize_modalities(config.get("modalities")),
+        train_split_csv=config.get("train_split_csv"),
+        val_split_csv=config.get("val_split_csv"),
     )
     dataset = ArchaeologySegmentationDataset(
         val_df,
