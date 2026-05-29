@@ -470,6 +470,38 @@ run_archaeology_5class_competition() {
   run_archaeology_competition_experiment "archaeology_5class_resnet34_li_competition" "resnet34"
 }
 
+run_collect_models_eval() {
+  local eval_root="$RUN_ROOT/collect_models_eval"
+  mkdir -p "$eval_root"
+
+  echo "Evaluating collected 5-class models..."
+  "$PYTHON_BIN" scripts/evaluate_collected_models.py \
+    --data-root "$DATA_ROOT" \
+    --models-root "$RUN_ROOT/collect_models" \
+    --out-dir "$eval_root" \
+    --task archaeology_5class \
+    --image-size 256 \
+    --split custom_regions \
+    --val-regions "$VAL_REGIONS" \
+    --object-iou-threshold 0.3 \
+    --min-area 8 \
+    --eval-all-models-on-li-too \
+    2>&1 | tee "$RUN_ROOT/logs/collect_models_evaluate.log"
+
+  echo "Running collected model postprocessing sweeps..."
+  "$PYTHON_BIN" scripts/collected_models_postprocess_sweep.py \
+    --data-root "$DATA_ROOT" \
+    --models-root "$RUN_ROOT/collect_models" \
+    --eval-root "$eval_root" \
+    --task archaeology_5class \
+    --image-size 256 \
+    --split custom_regions \
+    --val-regions "$VAL_REGIONS" \
+    --object-iou-threshold 0.3 \
+    --eval-all-models-on-li-too \
+    2>&1 | tee "$RUN_ROOT/logs/collect_models_postprocess_sweep.log"
+}
+
 case "$RUN_MODE" in
   full)
     run_full_series
@@ -483,8 +515,11 @@ case "$RUN_MODE" in
   archaeology_5class_competition)
     run_archaeology_5class_competition
     ;;
+  collect_models_eval)
+    run_collect_models_eval
+    ;;
   *)
-    echo "Unknown RUN_MODE=$RUN_MODE. Use full, multiclass_weight_sweep, archaeology_5class, or archaeology_5class_competition." >&2
+    echo "Unknown RUN_MODE=$RUN_MODE. Use full, multiclass_weight_sweep, archaeology_5class, archaeology_5class_competition, or collect_models_eval." >&2
     exit 2
     ;;
 esac

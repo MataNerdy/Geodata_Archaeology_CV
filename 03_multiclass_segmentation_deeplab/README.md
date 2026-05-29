@@ -76,9 +76,11 @@ segmentation_dataset/
 
 Все эксперименты используют `in_channels=1`, потому что Li/Ae/SpOr patches хранятся как одноканальные `.npy`.
 
-## Reference Baseline из Notebook
+## External Reference Checkpoint из Notebook
 
-Лучший notebook-result для 5-class segmentation зафиксирован как reference:
+В notebook был зафиксирован внешний reference checkpoint `deeplab_5class_43_best.pth`. Это не reproduced old baseline, а отдельный reference result для ориентира.
+
+Reported per-class IoU для external checkpoint:
 
 | Class | IoU |
 |---|---:|
@@ -89,7 +91,7 @@ segmentation_dataset/
 | fortifikatsii | 0.594 |
 | arkhitektury | 0.671 |
 
-Competition-like weighted F1: около `0.741`.
+Competition-like weighted F1 для external checkpoint: `0.7411`.
 
 Веса классов для polygon F1:
 
@@ -100,6 +102,61 @@ Competition-like weighted F1: около `0.741`.
 | gorodishcha | 16.7 |
 | arkhitektury | 11.1 |
 | fortifikatsii | 5.6 |
+
+## Reproduced Old Baseline
+
+`all_class_baseline.ipynb` не воспроизводит `0.7411`, но дает важный old baseline `archaeology_5class_old_baseline_resnet34`.
+
+Конфиг old baseline:
+
+| Parameter | Value |
+|---|---|
+| task | `archaeology_5class` |
+| encoder | `resnet34` |
+| encoder weights | `None` |
+| optimizer | Adam |
+| lr | `1e-4` |
+| batch size | `16` |
+| epochs / patience | `80 / 12` |
+| scheduler | ReduceLROnPlateau, factor `0.5`, patience `5` |
+| grad clip | `1.0` |
+| class weights | `0.2,1.0,1.0,1.4,1.8,1.8` |
+| loss weights | CE `0.7` + Dice `0.3` |
+| weighted sampler | off |
+| metadata filtering | on |
+| modalities | `Li,Ae,SpOr,Or` |
+| val regions | `005_ЛУБНО,012_ЛИХУША,008_СЕЛЯНЕ,011_РУНА,014_СТРЕКАЛОВКА,016_ЗОЛОТАРЕВКА,044_ГОЧЕВО` |
+
+Old baseline metrics:
+
+| Metric | Value |
+|---|---:|
+| best val_mean_fg_iou | 0.1565 at epoch 36 |
+| pixel mean_fg_iou | 0.1244 |
+| object F1 | 0.5538 |
+| weighted competition F1 | 0.4488 |
+
+Comparison:
+
+| Model | Split | Pixel mean_fg_iou | Object F1 | Weighted F1 |
+|---|---|---:|---:|---:|
+| current clean competition resnet50 Li | competition custom regions, Li only | 0.1517 | 0.4000 | 0.3346 |
+| old_baseline_resnet34 | old baseline custom regions + metadata filtering | 0.1244 | 0.5538 | 0.4488 |
+| external `deeplab_5class_43_best` checkpoint | external notebook reference split | high per-class IoU | not reported separately | 0.7411 |
+
+Old baseline has worse pixel IoU than the clean competition ResNet50 run, but better object-level F1. This supports the main archaeology-aware finding: object metrics are highly sensitive to split, postprocessing and precision/recall balance, and can tell a different story than flat pixel segmentation.
+
+Artifacts:
+
+```text
+runs/multiclass/archaeology_5class_old_baseline_resnet34/
+├── summary.json
+├── evaluation.csv
+├── evaluation_object.csv
+└── competition_metric.csv
+
+runs/multiclass/archaeology_5class_old_baseline_comparison.csv
+```
 
 ## Result
 
@@ -371,6 +428,75 @@ python scripts/evaluate_competition_metric.py \
   --gt-geojson runs/multiclass/deeplab_all_5_classes/ground_truth_geojson.json \
   --out-dir runs/multiclass/deeplab_all_5_classes
 ```
+
+## Collected 5-Class Model Evaluation
+
+Старые и новые 5-class checkpoints можно собрать в:
+
+```text
+runs/collect_models/
+├── li/
+└── all/
+```
+
+`li/` содержит модели, обученные только на LiDAR. `all/` содержит модели, обученные на всех доступных модальностях. Для честного сравнения скрипт прогоняет все checkpoints на едином validation split проекта и сохраняет pixel metrics, object/competition metrics, prediction grids и confidence/postprocessing sweep.
+
+Primary metric для 5-class archaeology pipeline: `weighted_competition_f1`. Pixel IoU остается полезной диагностикой, но object F1 и weighted competition F1 могут расходиться, потому что archaeological task ближе к object extraction, чем к flat pixel-perfect segmentation.
+
+Локальный запуск без обучения:
+
+```bash
+python scripts/evaluate_collected_models.py \
+  --data-root ../datasets/segmentation_dataset \
+  --models-root runs/collect_models \
+  --out-dir runs/collect_models_eval \
+  --task archaeology_5class \
+  --split custom_regions \
+  --val-regions "007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км" \
+  --object-iou-threshold 0.3 \
+  --min-area 8 \
+  --eval-all-models-on-li-too
+
+python scripts/collected_models_postprocess_sweep.py \
+  --data-root ../datasets/segmentation_dataset \
+  --models-root runs/collect_models \
+  --eval-root runs/collect_models_eval \
+  --task archaeology_5class \
+  --split custom_regions \
+  --val-regions "007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км" \
+  --object-iou-threshold 0.3 \
+  --eval-all-models-on-li-too
+```
+
+Kaggle run mode:
+
+```bash
+RUN_MODE=collect_models_eval \
+DATA_ROOT=/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset/segmentation_dataset \
+RUN_ROOT=/kaggle/working/Geodata_Archaeology_CV/03_multiclass_segmentation_deeplab/runs \
+bash run_kaggle_experiments.sh
+```
+
+Outputs:
+
+```text
+runs/collect_models_eval/
+├── collected_models_summary.csv
+├── skipped_models.csv
+├── top_models.md
+├── model_comparison_grid.png
+└── <model_name>/
+    ├── evaluation.csv
+    ├── evaluation.json
+    ├── evaluation_object.csv
+    ├── competition_metric.csv
+    ├── prediction_examples.png
+    ├── postprocess_sweep.csv
+    ├── postprocess_sweep.json
+    └── postprocess_sweep.png
+```
+
+Итоговая цель этого блока: выбрать логичную финальную 5-class модель для research chain, сравнивая Li-only, all-modalities, old baseline и external checkpoint на одной validation выборке.
 
 ## Kaggle
 
