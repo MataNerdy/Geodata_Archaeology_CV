@@ -29,6 +29,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train-split-csv", default=str(TRAIN_SPLIT))
     parser.add_argument("--val-split-csv", default=str(VAL_SPLIT))
     parser.add_argument("--run-training", action="store_true", help="Run seed-series training jobs.")
+    parser.add_argument(
+        "--training-groups",
+        choices=("both", "all", "li"),
+        default="both",
+        help="Choose which seed series to train. Use li to resume after the all-modalities series.",
+    )
+    parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="Skip a training run when best_model.pth and evaluation_object.json already exist.",
+    )
     parser.add_argument("--run-postprocess-sweep", action="store_true", help="Run postprocessing sweep for the selected best model.")
     parser.add_argument("--run-sampler-ablation", action="store_true", help="Run default-vs-weighted sampler ablation after best selection.")
     parser.add_argument("--object-iou-threshold", type=float, default=0.3)
@@ -46,12 +57,21 @@ def main() -> None:
     ensure_split_artifacts(train_split, val_split)
 
     if args.run_training:
-        print("[research] Starting seed series A/B")
-        for group, modalities in (("all", "Li,Ae,SpOr"), ("li", "Li")):
+        groups = {
+            "both": (("all", "Li,Ae,SpOr"), ("li", "Li")),
+            "all": (("all", "Li,Ae,SpOr"),),
+            "li": (("li", "Li"),),
+        }[args.training_groups]
+        print(f"[research] Starting seed series: {args.training_groups}")
+        for group, modalities in groups:
             for seed in SEEDS:
                 exp_name = f"resnet34_{group}_seed_{seed}"
-                run_one_training(args, run_root / exp_name, exp_name, seed, modalities, train_split, val_split)
-                run_val_evaluations(args, run_root / exp_name, modalities, train_split, val_split)
+                run_dir = run_root / exp_name
+                if args.skip_existing and is_completed_run(run_dir):
+                    print(f"[research] Skipping completed run: {exp_name}")
+                    continue
+                run_one_training(args, run_dir, exp_name, seed, modalities, train_split, val_split)
+                run_val_evaluations(args, run_dir, modalities, train_split, val_split)
 
     rows = collect_seed_summary(run_root)
     write_seed_summary(rows, run_root)
@@ -84,6 +104,10 @@ def ensure_split_artifacts(train_split: Path, val_split: Path) -> None:
             print(f"[split] Found {required}: {path}")
         else:
             print(f"[split] Missing {required}. Re-run scripts/create_research_split.py once to materialize full split artifact.")
+
+
+def is_completed_run(run_dir: Path) -> bool:
+    return (run_dir / "best_model.pth").exists() and (run_dir / "evaluation_object.json").exists()
 
 
 def run_one_training(args: argparse.Namespace, out_dir: Path, exp_name: str, seed: int, modalities: str, train_split: Path, val_split: Path) -> None:

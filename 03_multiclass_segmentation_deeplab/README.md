@@ -637,6 +637,17 @@ RUN_ROOT=/kaggle/working/Geodata_Archaeology_CV/03_multiclass_segmentation_deepl
 bash run_kaggle_experiments.sh
 ```
 
+Если all-modalities серия уже сохранена, продолжить только `Li`-запуски можно без повторного обучения готовых моделей:
+
+```bash
+RUN_MODE=research_split_v1_li \
+DATA_ROOT=/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset/segmentation_dataset \
+RUN_ROOT=/kaggle/working/Geodata_Archaeology_CV/03_multiclass_segmentation_deeplab/runs \
+bash run_kaggle_experiments.sh
+```
+
+Resume-режим использует `num_workers=0`, запускает только `resnet34_li_seed_{13,21,42,77,101}` и пропускает уже завершенные runs. Postprocessing sweep и sampler ablation запускаются отдельным проходом после проверки обеих seed-серий.
+
 Если split CSV еще не лежит в `SPLIT_DIR`, сначала создать его один раз:
 
 ```bash
