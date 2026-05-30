@@ -56,6 +56,7 @@ from utils.metrics import (
     multiclass_metrics_from_confusion,
     to_jsonable,
 )
+from utils.polygon_metrics import competition_like_f1, masks_to_geojson_features
 from utils.splits import make_split, parse_regions
 from utils.visualization import save_prediction_grid
 
@@ -100,6 +101,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int)
     parser.add_argument("--threshold", type=float)
     parser.add_argument("--save-samples", type=int)
+    parser.add_argument("--selection-metric", choices=["mean_fg_iou", "weighted_competition_f1"], default=None)
+    parser.add_argument("--object-iou-threshold", type=float)
+    parser.add_argument("--polygon-min-area", type=float)
     parser.add_argument("--use-weighted-sampler", action="store_true", default=None)
     parser.add_argument("--sampler-mode", default=None, choices=["class_name"])
     parser.add_argument("--use-metadata-filtering", action="store_true", default=None)
@@ -152,8 +156,7 @@ def main() -> None:
     val_loader = build_loader(val_df, config, shuffle=False)
 
     device = get_device()
-    print(f"Device: {device}")
-    print(f"Train samples: {len(train_df)} | Val samples: {len(val_df)}")
+    log_training_start(config, train_df, val_df, out_dir, device)
     print_summary_by_region_modality(val_df)
 
     model = build_model(
@@ -173,16 +176,30 @@ def main() -> None:
 
     for epoch in range(1, int(config["epochs"]) + 1):
         train_metrics = run_epoch(model, train_loader, criterion, optimizer, device, config["task"], "train", config)
-        val_metrics = run_epoch(model, val_loader, criterion, None, device, config["task"], "val", config)
+        val_metrics = run_epoch(
+            model,
+            val_loader,
+            criterion,
+            None,
+            device,
+            config["task"],
+            "val",
+            config,
+            collect_object_metrics=should_compute_epoch_object_metric(config),
+        )
         row = {"epoch": epoch, **train_metrics, **val_metrics}
         history.append(row)
         pd.DataFrame(history).to_csv(out_dir / "history.csv", index=False)
 
-        selection_key = "val_fg_iou" if config["task"] == "binary_kurgan" else "val_mean_fg_iou"
+        selection_key = selection_metric_key(config)
         current_metric = float(val_metrics.get(selection_key, float("nan")))
+        lr = optimizer.param_groups[0]["lr"]
+        val_weighted = val_metrics.get("val_weighted_competition_f1")
+        weighted_text = "" if val_weighted is None else f" val_weighted_competition_f1={float(val_weighted):.4f}"
         print(
-            f"Epoch {epoch:03d}: train_loss={train_metrics['train_loss']:.4f} "
-            f"val_loss={val_metrics['val_loss']:.4f} {selection_key}={current_metric:.4f}"
+            f"[epoch {epoch}/{int(config['epochs'])}] train_loss={train_metrics['train_loss']:.4f} "
+            f"val_loss={val_metrics['val_loss']:.4f} val_mean_fg_iou={val_metrics.get('val_mean_fg_iou', float('nan')):.4f}"
+            f"{weighted_text} best_metric={best_metric:.4f} lr={lr:.6g}"
         )
         if scheduler is not None:
             scheduler.step(current_metric)
@@ -200,10 +217,10 @@ def main() -> None:
                 },
                 out_dir / "best_model.pth",
             )
-            print(f"Saved best_model.pth ({selection_key}={current_metric:.4f})")
+            print(f"[train] New best checkpoint saved: {out_dir / 'best_model.pth'} ({selection_key}={current_metric:.4f})")
 
         if patience > 0 and epoch - best_epoch >= patience:
-            print(f"Early stopping: no improvement for {patience} epochs")
+            print(f"[train] Early stopping triggered at epoch {epoch}: no improvement for {patience} epochs")
             break
 
     with (out_dir / "summary.json").open("w", encoding="utf-8") as handle:
@@ -220,6 +237,11 @@ def main() -> None:
             indent=2,
             ensure_ascii=False,
         )
+
+    print("[train] Finished experiment")
+    print(f"[train] Best epoch: {best_epoch}")
+    print(f"[train] Best validation metric: {best_metric:.6f}")
+    print(f"[train] Output dir: {out_dir}")
 
     if int(config["save_samples"]) > 0:
         save_prediction_grid(
@@ -242,6 +264,7 @@ def run_epoch(
     task: str,
     split_name: str,
     config: dict[str, Any] | None = None,
+    collect_object_metrics: bool = False,
 ) -> dict[str, float]:
     """Run train or eval epoch."""
 
@@ -251,6 +274,9 @@ def run_epoch(
     loss_parts_total: dict[str, float] = {}
     num_classes = 2 if task == "binary_kurgan" else num_classes_for_task(task)
     matrix = torch.zeros((num_classes, num_classes), dtype=torch.int64)
+    pred_masks: list[np.ndarray] = []
+    gt_masks: list[np.ndarray] = []
+    sample_ids: list[str] = []
 
     for batch in loader:
         images = batch["image"].to(device)
@@ -267,7 +293,12 @@ def run_epoch(
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=float(grad_clip_norm))
                 optimizer.step()
         preds = logits_to_predictions(logits.detach(), task).cpu()
-        matrix += confusion_matrix(preds, masks.detach().cpu(), num_classes)
+        cpu_masks = masks.detach().cpu()
+        matrix += confusion_matrix(preds, cpu_masks, num_classes)
+        if collect_object_metrics and task == "archaeology_5class":
+            pred_masks.extend([item for item in preds.numpy()])
+            gt_masks.extend([item for item in cpu_masks.numpy()])
+            sample_ids.extend([str(item) for item in batch["sample_id"]])
         total_loss += float(loss.detach().cpu())
         for key, value in loss_parts.items():
             loss_parts_total[key] = loss_parts_total.get(key, 0.0) + float(value)
@@ -286,7 +317,74 @@ def run_epoch(
                 prefix=f"{split_name}_",
             )
         )
+    if collect_object_metrics and task == "archaeology_5class":
+        metrics.update(object_metrics_for_epoch(pred_masks, gt_masks, sample_ids, config, prefix=f"{split_name}_"))
     return metrics
+
+
+def object_metrics_for_epoch(
+    pred_masks: list[np.ndarray],
+    gt_masks: list[np.ndarray],
+    sample_ids: list[str],
+    config: dict[str, Any] | None,
+    prefix: str,
+) -> dict[str, float]:
+    """Compute validation object metrics for checkpoint selection."""
+
+    if not pred_masks or not gt_masks:
+        return {}
+    config = config or {}
+    min_area = float(config.get("polygon_min_area") or 8)
+    iou_threshold = float(config.get("object_iou_threshold") or 0.3)
+    pred_geojson = masks_to_geojson_features(pred_masks, sample_ids, min_area=min_area)
+    gt_geojson = masks_to_geojson_features(gt_masks, sample_ids, min_area=min_area)
+    weighted_f1, rows = competition_like_f1(pred_geojson, gt_geojson, iou_threshold=iou_threshold)
+    tp = float(rows["tp"].sum())
+    fp = float(rows["fp"].sum())
+    fn = float(rows["fn"].sum())
+    precision = tp / (tp + fp + 1e-6)
+    recall = tp / (tp + fn + 1e-6)
+    object_f1 = 2 * precision * recall / (precision + recall + 1e-6)
+    return {
+        f"{prefix}weighted_competition_f1": float(weighted_f1),
+        f"{prefix}object_precision": float(precision),
+        f"{prefix}object_recall": float(recall),
+        f"{prefix}object_f1": float(object_f1),
+    }
+
+
+def selection_metric_key(config: dict[str, Any]) -> str:
+    """Return metric key used to save best checkpoint."""
+
+    requested = config.get("selection_metric")
+    if requested == "weighted_competition_f1":
+        return "val_weighted_competition_f1"
+    if config["task"] == "binary_kurgan":
+        return "val_fg_iou"
+    return "val_mean_fg_iou"
+
+
+def should_compute_epoch_object_metric(config: dict[str, Any]) -> bool:
+    """Return whether object metrics should be computed each validation epoch."""
+
+    return config.get("selection_metric") == "weighted_competition_f1" and config["task"] == "archaeology_5class"
+
+
+def log_training_start(config: dict[str, Any], train_df: pd.DataFrame, val_df: pd.DataFrame, out_dir: Path, device: torch.device) -> None:
+    """Print a compact experiment header for long notebook/Kaggle runs."""
+
+    print(f"[train] Experiment name: {out_dir.name}")
+    print(f"[train] Seed: {config.get('seed')}")
+    print(f"[train] Modalities: {config.get('modalities') or 'all'}")
+    print(f"[train] Split files used: train={config.get('train_split_csv')} val={config.get('val_split_csv')}")
+    print(f"[train] Model: DeepLabV3+ ResNet34" if config.get("encoder") == "resnet34" else f"[train] Model: DeepLabV3+ {config.get('encoder')}")
+    print(f"[train] Image size: {config.get('image_size')}")
+    print(f"[train] Batch size: {config.get('batch_size')}")
+    print(f"[train] Loss: CE weight={config.get('ce_weight')} + Dice weight={config.get('dice_weight')}")
+    print(f"[train] Class weights: {config.get('class_weights')}")
+    print(f"[train] Optimizer / LR / scheduler: {config.get('optimizer')} / {config.get('lr')} / {config.get('scheduler')}")
+    print(f"[train] Train samples / Val samples: {len(train_df)} / {len(val_df)}")
+    print(f"[train] Device: {device}")
 
 
 def build_optimizer(model: torch.nn.Module, config: dict[str, Any]) -> torch.optim.Optimizer:
@@ -439,6 +537,9 @@ def default_config() -> dict[str, Any]:
         "seed": 42,
         "threshold": 0.5,
         "save_samples": 6,
+        "selection_metric": None,
+        "object_iou_threshold": 0.3,
+        "polygon_min_area": 8,
         "use_weighted_sampler": None,
         "sampler_mode": "class_name",
         "use_metadata_filtering": False,

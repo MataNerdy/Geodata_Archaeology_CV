@@ -101,6 +101,7 @@ def main() -> None:
     """Run evaluation."""
 
     args = parse_args()
+    print(f"[eval] Loading checkpoint: {args.checkpoint}")
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
     config = dict(checkpoint.get("config", {}))
     config.update({key: value for key, value in vars(args).items() if value is not None})
@@ -127,6 +128,10 @@ def main() -> None:
         )
         print(f"Metadata filtering: {before_count} -> {len(meta)} samples")
 
+    print(f"[eval] Split used: {config.get('split')}")
+    print(f"[eval] Split files used: train={config.get('train_split_csv')} val={config.get('val_split_csv')}")
+    print(f"[eval] Modalities: {normalize_modalities(config.get('modalities')) or 'all'}")
+    print(f"[eval] Object IoU threshold: {config.get('object_iou_threshold', 0.3)}")
     _, val_df = make_split(
         meta,
         split=config["split"],
@@ -137,6 +142,7 @@ def main() -> None:
         train_split_csv=config.get("train_split_csv"),
         val_split_csv=config.get("val_split_csv"),
     )
+    print(f"[eval] Number of samples: {len(val_df)}")
     dataset = ArchaeologySegmentationDataset(
         val_df,
         config["data_root"],
@@ -158,14 +164,18 @@ def main() -> None:
     model.load_state_dict(checkpoint.get("model_state_dict", checkpoint))
     model.eval()
 
+    print("[eval] Computing pixel metrics...")
     pred_masks, gt_masks, sample_ids, matrix = collect_predictions(model, loader, device, config)
     class_names = {0: "background", 1: "any_kurgan"} if config["task"] == "binary_kurgan" else class_names_for_task(config["task"])
 
     if config["eval_mode"] == "pixel":
         metrics = save_pixel_evaluation(matrix, class_names, config, out_dir)
     else:
+        print("[eval] Computing object metrics...")
         metrics = save_object_evaluation(pred_masks, gt_masks, sample_ids, config, out_dir)
+    print("[eval] Saving evaluation.csv/json")
     print(json.dumps(to_jsonable(metrics), indent=2, ensure_ascii=False))
+    print("[eval] Done")
 
 
 def collect_predictions(

@@ -79,6 +79,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     raw_meta = load_metadata(args.data_root)
+    print(f"[split] Loaded metadata: {len(raw_meta)} rows")
     meta = raw_meta.copy()
     if args.use_metadata_filtering:
         meta = filter_multiclass_metadata(
@@ -89,6 +90,7 @@ def main() -> None:
             exclude_touches_border=args.exclude_touches_border,
             min_foreground_pixels=args.min_foreground_pixels,
         )
+    print(f"[split] After filtering: {len(meta)} rows")
 
     strat_cols = tuple(parse_list(args.strat_cols))
     train_df, val_df, val_regions, score = make_region_holdout_split(
@@ -101,8 +103,21 @@ def main() -> None:
         n_trials=args.n_trials,
     )
 
+    print(f"[split] Train/val sizes: train={len(train_df)} val={len(val_df)}")
+    print("[split] Class distribution per split")
+    print("[split] train classes:\n" + train_df["class_name"].value_counts().to_string())
+    print("[split] val classes:\n" + val_df["class_name"].value_counts().to_string())
+    print("[split] Modality distribution per split")
+    print("[split] train modalities:\n" + train_df["modality"].value_counts().to_string())
+    print("[split] val modalities:\n" + val_df["modality"].value_counts().to_string())
+    print("[split] Region count per split")
+    print(f"[split] train regions={train_df['region'].nunique()} val regions={val_df['region'].nunique()}")
+
     train_df.to_csv(train_path, index=False)
+    print(f"[split] Saved train_split.csv: {train_path}")
     val_df.to_csv(val_path, index=False)
+    print(f"[split] Saved val_split.csv: {val_path}")
+    print("[split] No test split was provided or created. TODO: add test_split.csv only when a real held-out test protocol exists.")
 
     summary = {
         "split_name": out_dir.name,
@@ -120,8 +135,11 @@ def main() -> None:
         "val_modality_counts": val_df["modality"].value_counts().to_dict() if "modality" in val_df else {},
         "val_region_counts": val_df["region"].value_counts().to_dict() if "region" in val_df else {},
     }
-    with (out_dir / "split_summary.json").open("w", encoding="utf-8") as handle:
+    with (out_dir / "split_config.json").open("w", encoding="utf-8") as handle:
         json.dump(to_jsonable(summary), handle, indent=2, ensure_ascii=False)
+    print(f"[split] Saved split_config.json: {out_dir / 'split_config.json'}")
+    write_split_stats(summary, out_dir / "split_stats.md")
+    print(f"[split] Saved split_stats.md: {out_dir / 'split_stats.md'}")
 
     print(f"Saved frozen split to: {out_dir}")
     print(f"Train: {len(train_df)} | Val: {len(val_df)} | Score: {score:.6f}")
@@ -132,6 +150,39 @@ def main() -> None:
     print(val_df["class_name"].value_counts().to_string())
     print("Val modality counts:")
     print(val_df["modality"].value_counts().to_string())
+
+
+def write_split_stats(summary: dict, path: Path) -> None:
+    """Write human-readable split statistics."""
+
+    lines = [
+        "# archaeology_5class_research_split_v1",
+        "",
+        "Frozen split protocol artifact. This split is created once and reused with `--split frozen`.",
+        "",
+        "## Counts",
+        "",
+        f"- raw samples: {summary['raw_samples']}",
+        f"- filtered samples: {summary['filtered_samples']}",
+        f"- train samples: {summary['train_samples']}",
+        f"- val samples: {summary['val_samples']}",
+        f"- test samples: not available; no `test_split.csv` was created",
+        f"- split score: {summary['score']}",
+        "",
+        "## Validation Regions",
+        "",
+    ]
+    lines.extend(f"- {region}" for region in summary["val_regions"])
+    lines.extend(["", "## Train Class Counts", ""])
+    lines.extend(f"- {key}: {value}" for key, value in summary["train_class_counts"].items())
+    lines.extend(["", "## Val Class Counts", ""])
+    lines.extend(f"- {key}: {value}" for key, value in summary["val_class_counts"].items())
+    lines.extend(["", "## Train Modality Counts", ""])
+    lines.extend(f"- {key}: {value}" for key, value in summary["train_modality_counts"].items())
+    lines.extend(["", "## Val Modality Counts", ""])
+    lines.extend(f"- {key}: {value}" for key, value in summary["val_modality_counts"].items())
+    lines.extend(["", "## Limitation", "", "No test split is available yet. Model selection and postprocessing are validation-only."])
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def parse_list(value: object) -> list[str]:

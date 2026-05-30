@@ -79,6 +79,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--val-region")
     parser.add_argument("--val-regions", default=DEFAULT_VAL_REGIONS)
     parser.add_argument("--val-fraction", type=float, default=0.2)
+    parser.add_argument("--train-split-csv")
+    parser.add_argument("--val-split-csv")
     parser.add_argument("--object-iou-threshold", type=float, default=0.3)
     parser.add_argument("--polygon-min-area", type=int, default=8)
     parser.add_argument("--confidence-thresholds", default="0.00,0.10,0.20,0.30,0.40,0.50")
@@ -108,6 +110,10 @@ def main() -> None:
     summary_updates: list[dict[str, Any]] = []
     skipped: list[dict[str, str]] = []
 
+    total_configs = len(thresholds) * len(min_areas) * 2
+    print("[sweep] Starting postprocessing sweep")
+    print(f"[sweep] Found checkpoints: {len(models)}")
+    print(f"[sweep] Number of configs per eval: {total_configs}")
     for spec in models:
         evals = [(default_eval_tag(spec["group"]), default_modalities(spec["group"]))]
         if args.eval_all_models_on_li_too and spec["group"] == "all":
@@ -147,13 +153,22 @@ def sweep_one(
     probabilities, targets, sample_ids = collect_probabilities(model, loader, device)
     rows = []
     gt_objects = None
+    best_seen = -float("inf")
     for threshold in thresholds:
         for min_area in min_areas:
             for opening in (False, True):
+                print(f"[sweep] Current config: confidence={threshold}, min_area={min_area}, opening={opening}")
                 preds = predictions_from_probabilities(probabilities, threshold, min_area, opening)
                 row = evaluate_predictions(preds, targets, sample_ids, args, threshold, min_area, opening)
                 rows.append(row)
                 gt_objects = row["num_gt_objects"]
+                print(
+                    f"[sweep] weighted_f1={row['weighted_competition_f1']:.4f}, "
+                    f"object_f1={row['object_f1']:.4f}, precision={row['object_precision']:.4f}, recall={row['object_recall']:.4f}"
+                )
+                if row["weighted_competition_f1"] > best_seen:
+                    best_seen = row["weighted_competition_f1"]
+                    print("[sweep] New best config found")
     df = pd.DataFrame(rows)
     df.to_csv(run_dir / "postprocess_sweep.csv", index=False)
     best = df.sort_values("weighted_competition_f1", ascending=False).iloc[0].to_dict()
@@ -166,6 +181,7 @@ def sweep_one(
     }
     (run_dir / "postprocess_sweep.json").write_text(json.dumps(to_jsonable(payload), indent=2, ensure_ascii=False), encoding="utf-8")
     plot_sweep(df, run_dir / "postprocess_sweep.png")
+    print(f"[sweep] Saved sweep results: {run_dir}")
     print(f"[SWEEP] {run_name}: best weighted_f1={best['weighted_competition_f1']:.4f}")
     return {
         "model_name": run_name,
@@ -289,6 +305,8 @@ def get_dataset_loader(
         val_regions=parse_regions(args.val_regions),
         val_fraction=args.val_fraction,
         modalities=modalities,
+        train_split_csv=args.train_split_csv,
+        val_split_csv=args.val_split_csv,
     )
     dataset = ArchaeologySegmentationDataset(val_df, args.data_root, image_size=args.image_size, task=args.task)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)

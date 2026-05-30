@@ -585,6 +585,95 @@ python scripts/train.py \
 
 Важно: в `split=frozen` metadata filtering в train/evaluate выключается, потому что split CSV уже должен быть создан после filtering.
 
+
+## Research Split v1 Benchmark
+
+Следующий честный stage для `archaeology_5class` фиксирует один split и запускает только DeepLabV3+ ResNet34 old recipe. Новые архитектуры, ensemble, pseudo-labeling и подбор по test здесь не используются.
+
+Серия экспериментов:
+
+| Series | Experiment pattern | Modalities | Seeds | Purpose |
+|---|---|---|---|---|
+| A | `resnet34_all_seed_*` | `Li,Ae,SpOr` | `13,21,42,77,101` | основной all-modalities benchmark |
+| B | `resnet34_li_seed_*` | `Li` | `13,21,42,77,101` | LiDAR-only ablation |
+| C | best A/B + postprocessing sweep | выбранная best модель | validation best | confidence/min-area/opening tuning |
+| D | sampler ablation | best modality setup | best seed | default vs weighted sampler |
+
+Primary selection metric:
+
+```text
+weighted_competition_f1
+```
+
+Secondary metrics:
+
+```text
+object_f1
+object_precision
+object_recall
+mean_fg_iou
+per-class IoU
+```
+
+Запуск всей стадии после создания frozen split:
+
+```bash
+python scripts/run_research_split_v1.py \
+  --data-root ../datasets/segmentation_dataset \
+  --run-root runs/research_split_v1 \
+  --train-split-csv splits/archaeology_5class_research_split_v1/train_split.csv \
+  --val-split-csv splits/archaeology_5class_research_split_v1/val_split.csv \
+  --run-training \
+  --run-postprocess-sweep \
+  --run-sampler-ablation
+```
+
+На Kaggle тот же stage запускается через:
+
+```bash
+RUN_MODE=research_split_v1 \
+DATA_ROOT=/kaggle/input/datasets/matanerdy/kurgans-dataset/segmentation_dataset/segmentation_dataset \
+RUN_ROOT=/kaggle/working/Geodata_Archaeology_CV/03_multiclass_segmentation_deeplab/runs \
+bash run_kaggle_experiments.sh
+```
+
+Если split CSV еще не лежит в `SPLIT_DIR`, сначала создать его один раз:
+
+```bash
+python scripts/create_research_split.py \
+  --data-root "$DATA_ROOT" \
+  --out-dir splits/archaeology_5class_research_split_v1
+```
+
+Expected outputs:
+
+```text
+splits/archaeology_5class_research_split_v1/
+├── train_split.csv
+├── val_split.csv
+├── split_config.json
+└── split_stats.md
+
+runs/research_split_v1/
+├── resnet34_all_seed_13/
+├── resnet34_all_seed_21/
+├── resnet34_all_seed_42/
+├── resnet34_all_seed_77/
+├── resnet34_all_seed_101/
+├── resnet34_li_seed_13/
+├── resnet34_li_seed_21/
+├── resnet34_li_seed_42/
+├── resnet34_li_seed_77/
+├── resnet34_li_seed_101/
+├── research_split_v1_seed_summary.csv
+├── research_split_v1_seed_summary.md
+├── best_model_selection.md
+├── postprocess_sweep/
+└── sampler_ablation/
+```
+
+`test_split.csv` не создается автоматически. Если held-out test появится позже, он должен быть добавлен как отдельный protocol artifact, и model/postprocessing selection всё равно остается validation-only.
+
 ## Kaggle
 
 1. Подключить `segmentation_dataset` как Kaggle Dataset.

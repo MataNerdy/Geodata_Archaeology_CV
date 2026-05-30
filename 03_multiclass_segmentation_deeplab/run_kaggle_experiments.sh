@@ -7,6 +7,7 @@ PYTHON_BIN="${PYTHON_BIN:-python}"
 RUN_MODE="${RUN_MODE:-full}"
 SEG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VAL_REGIONS="${VAL_REGIONS:-007_ЮШКОВО,008_СЕЛЯНЕ,025_ШУМГОРА,033_МИЛОВИДОВО_0.1км}"
+SPLIT_DIR="${SPLIT_DIR:-$SEG_DIR/splits/archaeology_5class_research_split_v1}"
 
 export PYTHONPATH="$SEG_DIR:${PYTHONPATH:-}"
 
@@ -17,6 +18,7 @@ echo "RUN_ROOT=$RUN_ROOT"
 echo "SEG_DIR=$SEG_DIR"
 echo "PYTHON_BIN=$PYTHON_BIN"
 echo "RUN_MODE=$RUN_MODE"
+echo "SPLIT_DIR=$SPLIT_DIR"
 
 "$PYTHON_BIN" - <<'PY'
 import sys
@@ -502,6 +504,29 @@ run_collect_models_eval() {
     2>&1 | tee "$RUN_ROOT/logs/collect_models_postprocess_sweep.log"
 }
 
+run_research_split_v1() {
+  local research_root="$RUN_ROOT/research_split_v1"
+  mkdir -p "$research_root"
+  echo "Running research_split_v1 stage..."
+  echo "Expected frozen split: $SPLIT_DIR"
+  if [[ ! -f "$SPLIT_DIR/train_split.csv" || ! -f "$SPLIT_DIR/val_split.csv" ]]; then
+    echo "Frozen split CSV files not found. Create them once before training:" >&2
+    echo "  $PYTHON_BIN scripts/create_research_split.py --data-root $DATA_ROOT --out-dir $SPLIT_DIR" >&2
+    exit 3
+  fi
+
+  "$PYTHON_BIN" scripts/run_research_split_v1.py \
+    --data-root "$DATA_ROOT" \
+    --run-root "$research_root" \
+    --python-bin "$PYTHON_BIN" \
+    --train-split-csv "$SPLIT_DIR/train_split.csv" \
+    --val-split-csv "$SPLIT_DIR/val_split.csv" \
+    --run-training \
+    --run-postprocess-sweep \
+    --run-sampler-ablation \
+    2>&1 | tee "$RUN_ROOT/logs/research_split_v1.log"
+}
+
 case "$RUN_MODE" in
   full)
     run_full_series
@@ -518,8 +543,11 @@ case "$RUN_MODE" in
   collect_models_eval)
     run_collect_models_eval
     ;;
+  research_split_v1)
+    run_research_split_v1
+    ;;
   *)
-    echo "Unknown RUN_MODE=$RUN_MODE. Use full, multiclass_weight_sweep, archaeology_5class, archaeology_5class_competition, or collect_models_eval." >&2
+    echo "Unknown RUN_MODE=$RUN_MODE. Use full, multiclass_weight_sweep, archaeology_5class, archaeology_5class_competition, collect_models_eval, or research_split_v1." >&2
     exit 2
     ;;
 esac
