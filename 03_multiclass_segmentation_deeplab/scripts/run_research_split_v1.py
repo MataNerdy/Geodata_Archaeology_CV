@@ -41,6 +41,9 @@ def parse_args() -> argparse.Namespace:
         help="Skip a training run when best_model.pth and evaluation_object.json already exist.",
     )
     parser.add_argument("--run-postprocess-sweep", action="store_true", help="Run postprocessing sweep for the selected best model.")
+    parser.add_argument("--postprocess-checkpoint", help="Optional external checkpoint for a sweep-only run.")
+    parser.add_argument("--postprocess-modalities", default="Li", help="Modalities used by an external postprocessing checkpoint.")
+    parser.add_argument("--postprocess-experiment", default="external_postprocess_checkpoint", help="Experiment label for an external postprocessing checkpoint.")
     parser.add_argument("--run-sampler-ablation", action="store_true", help="Run default-vs-weighted sampler ablation after best selection.")
     parser.add_argument("--object-iou-threshold", type=float, default=0.3)
     parser.add_argument("--batch-size", type=int, default=16)
@@ -77,8 +80,9 @@ def main() -> None:
     write_seed_summary(rows, run_root)
     best = select_best(rows, run_root)
 
-    if args.run_postprocess_sweep and best:
-        run_postprocess_sweep(args, run_root, best, train_split, val_split)
+    sweep_best = external_postprocess_selection(args) if args.postprocess_checkpoint else best
+    if args.run_postprocess_sweep and sweep_best:
+        run_postprocess_sweep(args, run_root, sweep_best, train_split, val_split)
     if args.run_sampler_ablation and best:
         run_sampler_ablation(args, run_root, best, train_split, val_split)
 
@@ -258,6 +262,19 @@ This is validation-only model selection. No test split is available unless `spli
     print(f"[research] Best model selected: {best['experiment']} weighted_f1={best['best_val_weighted_f1']}")
     print(f"[research] Saved best selection: {path}")
     return best
+
+
+def external_postprocess_selection(args: argparse.Namespace) -> dict[str, Any]:
+    checkpoint = resolve_path(args.postprocess_checkpoint)
+    if not checkpoint.exists():
+        raise FileNotFoundError(f"External postprocessing checkpoint missing: {checkpoint}")
+    print(f"[sweep] Using external checkpoint: {checkpoint}")
+    print(f"[sweep] External checkpoint modalities: {args.postprocess_modalities}")
+    return {
+        "experiment": args.postprocess_experiment,
+        "modalities": args.postprocess_modalities,
+        "checkpoint_path": str(checkpoint),
+    }
 
 
 def run_postprocess_sweep(args: argparse.Namespace, run_root: Path, best: dict[str, Any], train_split: Path, val_split: Path) -> None:

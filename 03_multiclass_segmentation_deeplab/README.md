@@ -662,6 +662,21 @@ python scripts/run_research_split_v1.py \
 
 Runner выбирает лучший checkpoint только по validation `weighted_competition_f1`, затем проверяет confidence threshold, минимальную площадь компоненты и morphology opening. Результаты сохраняются в `runs/research_split_v1/postprocess_sweep/`.
 
+Если предыдущая Kaggle-сессия завершена и `/kaggle/working` пуст, загрузи выбранный checkpoint как Kaggle Dataset file, например `resnet34_li_seed_101.pth`, и передай его явно:
+
+```bash
+python scripts/run_research_split_v1.py \
+  --data-root "$DATA_ROOT" \
+  --run-root runs/research_split_v1 \
+  --train-split-csv splits/archaeology_5class_research_split_v1/train_split.csv \
+  --val-split-csv splits/archaeology_5class_research_split_v1/val_split.csv \
+  --num-workers 0 \
+  --run-postprocess-sweep \
+  --postprocess-checkpoint /kaggle/input/datasets/matanerdy/kurgans-dataset/resnet34_li_seed_101.pth \
+  --postprocess-experiment resnet34_li_seed_101 \
+  --postprocess-modalities Li
+```
+
 Если split CSV еще не лежит в `SPLIT_DIR`, сначала создать его один раз:
 
 ```bash
