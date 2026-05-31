@@ -677,6 +677,25 @@ python scripts/run_research_split_v1.py \
   --postprocess-modalities Li
 ```
 
+Для сравнительного Stage C sweep нескольких all-modalities checkpoints загрузи выбранные `.pth` файлы в Kaggle Dataset, скопируй их в `runs/research_split_v1/postprocess_sweep_all_selected/collect_models/all/` и запусти:
+
+```bash
+python scripts/collected_models_postprocess_sweep.py \
+  --data-root "$DATA_ROOT" \
+  --models-root runs/research_split_v1/postprocess_sweep_all_selected/collect_models \
+  --eval-root runs/research_split_v1/postprocess_sweep_all_selected \
+  --task archaeology_5class \
+  --image-size 256 \
+  --batch-size 16 \
+  --num-workers 0 \
+  --split frozen \
+  --train-split-csv splits/archaeology_5class_research_split_v1/train_split.csv \
+  --val-split-csv splits/archaeology_5class_research_split_v1/val_split.csv \
+  --object-iou-threshold 0.3
+```
+
+Notebook содержит готовую ячейку `Stage C2` для seeds `21`, `77`, `101`. Модели из группы `all` оцениваются на полном frozen validation split.
+
 Если split CSV еще не лежит в `SPLIT_DIR`, сначала создать его один раз:
 
 ```bash
