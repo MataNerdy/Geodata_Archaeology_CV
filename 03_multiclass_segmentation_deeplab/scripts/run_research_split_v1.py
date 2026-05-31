@@ -266,10 +266,14 @@ def run_postprocess_sweep(args: argparse.Namespace, run_root: Path, best: dict[s
     group = "li" if best["modalities"] == "Li" else "all"
     model_dir = models_root / group
     model_dir.mkdir(parents=True, exist_ok=True)
+    for stale_checkpoint in model_dir.iterdir():
+        if stale_checkpoint.suffix.lower() in {".pth", ".pt", ".ckpt"}:
+            stale_checkpoint.unlink()
     checkpoint = Path(best["checkpoint_path"])
-    staged = model_dir / checkpoint.name
+    staged = model_dir / f"{best['experiment']}{checkpoint.suffix}"
     shutil.copy2(checkpoint, staged)
     print(f"[sweep] Starting postprocessing sweep for best checkpoint: {checkpoint}")
+    print(f"[sweep] Staged selected checkpoint: {staged}")
     cmd = [
         args.python_bin, "scripts/collected_models_postprocess_sweep.py",
         "--data-root", args.data_root,

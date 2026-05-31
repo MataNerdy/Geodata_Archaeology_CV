@@ -648,6 +648,20 @@ bash run_kaggle_experiments.sh
 
 Resume-режим использует `num_workers=0`, запускает только `resnet34_li_seed_{13,21,42,77,101}` и пропускает уже завершенные runs. Postprocessing sweep и sampler ablation запускаются отдельным проходом после проверки обеих seed-серий.
 
+После завершения A/B запусти отдельный validation-only postprocessing sweep. Повторное обучение не выполняется:
+
+```bash
+python scripts/run_research_split_v1.py \
+  --data-root "$DATA_ROOT" \
+  --run-root runs/research_split_v1 \
+  --train-split-csv splits/archaeology_5class_research_split_v1/train_split.csv \
+  --val-split-csv splits/archaeology_5class_research_split_v1/val_split.csv \
+  --num-workers 0 \
+  --run-postprocess-sweep
+```
+
+Runner выбирает лучший checkpoint только по validation `weighted_competition_f1`, затем проверяет confidence threshold, минимальную площадь компоненты и morphology opening. Результаты сохраняются в `runs/research_split_v1/postprocess_sweep/`.
+
 Если split CSV еще не лежит в `SPLIT_DIR`, сначала создать его один раз:
 
 ```bash

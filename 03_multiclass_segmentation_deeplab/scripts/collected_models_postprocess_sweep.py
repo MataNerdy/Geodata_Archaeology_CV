@@ -149,8 +149,13 @@ def sweep_one(
     run_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = torch.load(spec["path"], map_location="cpu")
     model, encoder = load_model_from_checkpoint(checkpoint, spec["path"], args.task, device)
-    _, loader = get_dataset_loader(meta, modalities, args, dataset_cache)
+    dataset, loader = get_dataset_loader(meta, modalities, args, dataset_cache)
+    print(f"[sweep] Model: {spec['path']}")
+    print(f"[sweep] Eval modalities: {modalities or 'all'}")
+    print(f"[sweep] Validation samples: {len(dataset)}")
+    print("[sweep] Collecting softmax probabilities...")
     probabilities, targets, sample_ids = collect_probabilities(model, loader, device)
+    print(f"[sweep] Probability maps cached: {len(probabilities)}")
     rows = []
     gt_objects = None
     best_seen = -float("inf")
@@ -197,12 +202,15 @@ def collect_probabilities(model: torch.nn.Module, loader: DataLoader, device: to
     probabilities: list[np.ndarray] = []
     targets: list[np.ndarray] = []
     sample_ids: list[str] = []
-    for batch in loader:
+    total_batches = len(loader)
+    for batch_index, batch in enumerate(loader, start=1):
         logits = model(batch["image"].to(device))
         probs = torch.softmax(logits, dim=1).cpu().numpy()
         probabilities.extend([item for item in probs])
         targets.extend([item.numpy() for item in batch["mask"]])
         sample_ids.extend([str(item) for item in batch["sample_id"]])
+        if batch_index % 10 == 0 or batch_index == total_batches:
+            print(f"[sweep] Inference batch {batch_index}/{total_batches}")
     return probabilities, targets, sample_ids
 
 
