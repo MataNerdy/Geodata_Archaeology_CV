@@ -733,6 +733,50 @@ runs/research_split_v1/
 
 `test_split.csv` не создается автоматически. Если held-out test появится позже, он должен быть добавлен как отдельный protocol artifact, и model/postprocessing selection всё равно остается validation-only.
 
+### Stage D: Sampler Ablation
+
+После Stage C sampler ablation проверяет только влияние train sampler для выбранного recipe:
+
+- DeepLabV3+ ResNet34;
+- all modalities: `Li,Ae,SpOr`;
+- seed `101`;
+- frozen split `archaeology_5class_research_split_v1`;
+- неизменные loss, optimizer, scheduler и class weights.
+
+Поддерживаются два режима:
+
+```text
+--sampler default
+--sampler weighted
+```
+
+`weighted` использует `WeightedRandomSampler`: вес train sample обратно пропорционален числу samples его `class_name`. Foreground-heavy sampler намеренно не добавлен, поскольку потребовал бы новой политики оценки mask content и перестал бы быть минимальной sampler-only ablation.
+
+Запуск:
+
+```bash
+python -u scripts/run_sampler_ablation_stage_d.py \
+  --data-root "$DATA_ROOT" \
+  --out-root runs/research_split_v1/sampler_ablation \
+  --train-split-csv splits/archaeology_5class_research_split_v1/train_split.csv \
+  --val-split-csv splits/archaeology_5class_research_split_v1/val_split.csv \
+  --modalities Li,Ae,SpOr \
+  --seed 101 \
+  --batch-size 16 \
+  --num-workers 0
+```
+
+Результаты:
+
+```text
+runs/research_split_v1/sampler_ablation/
+├── resnet34_all_seed_101_default_sampler/
+├── resnet34_all_seed_101_weighted_sampler/
+├── sampler_ablation_summary.csv
+├── sampler_ablation_summary.md
+└── sampler_ablation_notes.md
+```
+
 ## Kaggle
 
 1. Подключить `segmentation_dataset` как Kaggle Dataset.

@@ -315,7 +315,7 @@ def run_sampler_ablation(args: argparse.Namespace, run_root: Path, best: dict[st
     sampler_root = run_root / "sampler_ablation"
     modalities = best["modalities"] or "Li,Ae,SpOr"
     seed = best.get("seed") or 42
-    for sampler_name, flag in (("default", "false"), ("weighted", "true")):
+    for sampler_name in ("default", "weighted"):
         print(f"[sampler] Current sampler: {sampler_name}")
         print(f"[sampler] Seed: {seed}")
         out_dir = sampler_root / f"{best['experiment']}_{sampler_name}_sampler"
@@ -332,11 +332,8 @@ def run_sampler_ablation(args: argparse.Namespace, run_root: Path, best: dict[st
             "--batch-size", str(args.batch_size),
             "--num-workers", str(args.num_workers),
             "--selection-metric", "weighted_competition_f1",
-            "--use-weighted-sampler" if flag == "true" else "--sampler-mode",
+            "--sampler", sampler_name,
         ]
-        if flag == "false":
-            # There is no negative boolean CLI for argparse store_true. Use config default false from old recipe file.
-            cmd.append("class_name")
         run(cmd)
         run_val_evaluations(args, out_dir, modalities, train_split, val_split)
     limitation = sampler_root / "sampler_ablation_notes.md"

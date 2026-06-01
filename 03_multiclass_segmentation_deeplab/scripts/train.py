@@ -104,6 +104,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--selection-metric", choices=["mean_fg_iou", "weighted_competition_f1"], default=None)
     parser.add_argument("--object-iou-threshold", type=float)
     parser.add_argument("--polygon-min-area", type=float)
+    parser.add_argument("--sampler", choices=["default", "weighted"])
     parser.add_argument("--use-weighted-sampler", action="store_true", default=None)
     parser.add_argument("--sampler-mode", default=None, choices=["class_name"])
     parser.add_argument("--use-metadata-filtering", action="store_true", default=None)
@@ -150,6 +151,8 @@ def main() -> None:
     )
     train_df.to_csv(out_dir / "train_split.csv", index=False)
     val_df.to_csv(out_dir / "val_split.csv", index=False)
+
+    prepare_sampler_config(train_df, config)
     save_config(config, out_dir / "config_used.yaml")
 
     train_loader = build_loader(train_df, config, shuffle=True, use_sampler=should_use_weighted_sampler(config))
@@ -383,6 +386,7 @@ def log_training_start(config: dict[str, Any], train_df: pd.DataFrame, val_df: p
     print(f"[train] Loss: CE weight={config.get('ce_weight')} + Dice weight={config.get('dice_weight')}")
     print(f"[train] Class weights: {config.get('class_weights')}")
     print(f"[train] Optimizer / LR / scheduler: {config.get('optimizer')} / {config.get('lr')} / {config.get('scheduler')}")
+    print(f"[train] Sampler: {config.get('sampler')}")
     print(f"[train] Train samples / Val samples: {len(train_df)} / {len(val_df)}")
     print(f"[train] Device: {device}")
 
@@ -447,9 +451,40 @@ def build_loader(
 def should_use_weighted_sampler(config: dict[str, Any]) -> bool:
     """Return whether weighted sampler should be enabled."""
 
-    if config.get("use_weighted_sampler") is not None:
-        return bool(config.get("use_weighted_sampler"))
-    return config["task"] == "archaeology_5class"
+    return config.get("sampler", "default") == "weighted"
+
+
+def prepare_sampler_config(meta: pd.DataFrame, config: dict[str, Any]) -> None:
+    """Store and log resolved sampler diagnostics before training starts."""
+
+    sampler = str(config.get("sampler") or "default")
+    config["sampler"] = sampler
+    config["use_weighted_sampler"] = sampler == "weighted"
+    print(f"[train] Sampler: {sampler}")
+    if sampler == "default":
+        config["sampler_details"] = {"sampler": "default"}
+        return
+    if sampler != "weighted":
+        raise ValueError(f"Unsupported sampler: {sampler}")
+
+    labels = sample_labels_for_sampler(meta)
+    counts = labels.value_counts().to_dict()
+    class_weights = {str(label): 1.0 / max(int(count), 1) for label, count in counts.items()}
+    sample_weights = labels.map(lambda label: class_weights[str(label)]).astype(float).values
+    config["sampler_details"] = {
+        "sampler": "weighted",
+        "sampler_mode": config.get("sampler_mode") or "class_name",
+        "class_counts": {str(label): int(count) for label, count in counts.items()},
+        "class_weights": class_weights,
+        "sample_weights_preview": [float(weight) for weight in sample_weights[:10]],
+    }
+    print("[train] Weighted sampler class counts:")
+    for label, count in counts.items():
+        print(f"[train]   {label}: {int(count)}")
+    print("[train] Weighted sampler class weights:")
+    for label, weight in class_weights.items():
+        print(f"[train]   {label}: {weight:.8f}")
+    print(f"[train] Weighted sampler first sample weights: {config['sampler_details']['sample_weights_preview']}")
 
 
 def build_weighted_sampler(
@@ -461,10 +496,7 @@ def build_weighted_sampler(
     mode = config.get("sampler_mode") or "class_name"
     if mode != "class_name":
         raise ValueError(f"Unsupported sampler_mode: {mode}")
-    if "class_name" in meta.columns:
-        labels = meta["class_name"].astype(str)
-    else:
-        labels = infer_sample_labels_from_mask_pixels(meta)
+    labels = sample_labels_for_sampler(meta)
     counts = labels.value_counts().to_dict()
     weights = labels.map(lambda label: 1.0 / max(counts[str(label)], 1)).astype(float).values
     return WeightedRandomSampler(
@@ -472,6 +504,14 @@ def build_weighted_sampler(
         num_samples=len(weights),
         replacement=True,
     )
+
+
+def sample_labels_for_sampler(meta: pd.DataFrame) -> pd.Series:
+    """Return metadata labels used by the inverse-frequency sampler."""
+
+    if "class_name" in meta.columns:
+        return meta["class_name"].astype(str)
+    return infer_sample_labels_from_mask_pixels(meta)
 
 
 def infer_sample_labels_from_mask_pixels(meta: pd.DataFrame) -> pd.Series:
@@ -540,6 +580,7 @@ def default_config() -> dict[str, Any]:
         "selection_metric": None,
         "object_iou_threshold": 0.3,
         "polygon_min_area": 8,
+        "sampler": "default",
         "use_weighted_sampler": None,
         "sampler_mode": "class_name",
         "use_metadata_filtering": False,
@@ -568,8 +609,10 @@ def resolve_config(args: argparse.Namespace) -> dict[str, Any]:
         config["class_weights"] = None
     else:
         config["pos_weight"] = None
-    if config["task"] == "archaeology_5class" and config.get("use_weighted_sampler") is None:
-        config["use_weighted_sampler"] = True
+    if config.get("sampler") is None:
+        config["sampler"] = "default"
+    if config.get("use_weighted_sampler"):
+        config["sampler"] = "weighted"
     return config
 
 

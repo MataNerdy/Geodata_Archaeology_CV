@@ -29,6 +29,7 @@ save_samples: 8
 selection_metric: weighted_competition_f1
 object_iou_threshold: 0.3
 polygon_min_area: 8
+sampler: default
 use_weighted_sampler: false
 sampler_mode: class_name
 use_metadata_filtering: false
