@@ -15,10 +15,10 @@ import pandas as pd
 
 
 EXPERIMENTS = (
-    ("resnet34_li", "resnet34", "Li"),
-    ("resnet50_li", "resnet50", "Li"),
-    ("resnet34_all_modalities", "resnet34", "all"),
-    ("resnet50_all_modalities", "resnet50", "all"),
+    ("resnet34_li", "resnet34", "Li", ("resnet34_li",)),
+    ("resnet50_li", "resnet50", "Li", ("resnet50_li",)),
+    ("resnet34_all_modalities", "resnet34", "all", ("resnet34_all_modalities", "resnet34_all")),
+    ("resnet50_all_modalities", "resnet50", "all", ("resnet50_all_modalities", "resnet50_all")),
 )
 METRIC_COLUMNS = (
     "mean_fg_iou",
@@ -67,8 +67,8 @@ def collect_rows(run_root: Path) -> list[dict[str, object]]:
 
     rows = []
     missing = []
-    for experiment, encoder, modalities in EXPERIMENTS:
-        run_dir = run_root / experiment
+    for experiment, encoder, modalities, aliases in EXPERIMENTS:
+        run_dir = find_run_dir(run_root, aliases)
         evaluation_path = run_dir / "evaluation.json"
         summary_path = run_dir / "summary.json"
         if not evaluation_path.exists() or not summary_path.exists():
@@ -88,6 +88,16 @@ def collect_rows(run_root: Path) -> list[dict[str, object]]:
     if missing:
         raise FileNotFoundError("Missing diagnostic run artifacts:\n- " + "\n- ".join(missing))
     return rows
+
+
+def find_run_dir(run_root: Path, aliases: tuple[str, ...]) -> Path:
+    """Return the first matching run folder, including downloaded short aliases."""
+
+    for alias in aliases:
+        run_dir = run_root / alias
+        if run_dir.is_dir():
+            return run_dir
+    return run_root / aliases[0]
 
 
 def save_comparison_grid(frame: pd.DataFrame, path: Path) -> None:
