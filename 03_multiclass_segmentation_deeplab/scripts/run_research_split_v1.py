@@ -332,6 +332,7 @@ def run_sampler_ablation(args: argparse.Namespace, run_root: Path, best: dict[st
             "--batch-size", str(args.batch_size),
             "--num-workers", str(args.num_workers),
             "--selection-metric", "weighted_competition_f1",
+            "--object-iou-threshold", str(args.object_iou_threshold),
             "--sampler", sampler_name,
         ]
         run(cmd)
@@ -339,6 +340,9 @@ def run_sampler_ablation(args: argparse.Namespace, run_root: Path, best: dict[st
     limitation = sampler_root / "sampler_ablation_notes.md"
     limitation.write_text(
         "# Sampler Ablation Notes\n\nImplemented default sampler vs weighted class-name sampler. "
+        "The default route reuses the Stage A split, modalities, seed, worker count, selection metric and "
+        "object IoU threshold. Bit-for-bit reconstruction of an earlier GPU checkpoint is not guaranteed "
+        "because CUDA deterministic-algorithms mode was not enabled for the original Stage A run. "
         "A foreground-heavy sampler was not added because it would require a new sampling policy beyond the existing metadata-based infrastructure.\n",
         encoding="utf-8",
     )

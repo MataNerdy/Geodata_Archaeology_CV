@@ -29,7 +29,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--modalities", default="Li,Ae,SpOr")
     parser.add_argument("--seed", type=int, default=101)
     parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=2,
+        help="Match Stage A by default. Override to 0 only when notebook worker startup is unstable.",
+    )
     parser.add_argument("--object-iou-threshold", type=float, default=0.3)
     return parser.parse_args()
 
@@ -204,6 +209,13 @@ def write_notes(out_root: Path) -> None:
     (out_root / "sampler_ablation_notes.md").write_text(
         "# Stage D Notes\n\n"
         "Implemented `default` vs inverse-frequency `weighted` sampling by metadata `class_name`.\n\n"
+        "The default-sampler run intentionally matches Stage A CLI settings, including `num_workers=2`, "
+        "unless the caller explicitly overrides them. It uses shuffled training batches, no explicit "
+        "DataLoader generator, `drop_last=False`, the same frozen split, modalities, seed, selection metric "
+        "and object IoU threshold as Stage A.\n\n"
+        "Bit-for-bit reconstruction of a previously trained GPU checkpoint is not guaranteed because CUDA "
+        "kernels were not run in deterministic-algorithms mode. The ablation controls the experiment recipe "
+        "as closely as possible without changing the established Stage A training behavior.\n\n"
         "A foreground-heavy sampler was intentionally not added: it would introduce a new sample-scoring policy "
         "based on mask content and would no longer be a minimal sampler-only ablation.\n",
         encoding="utf-8",

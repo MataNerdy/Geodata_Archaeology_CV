@@ -646,7 +646,7 @@ RUN_ROOT=/kaggle/working/Geodata_Archaeology_CV/03_multiclass_segmentation_deepl
 bash run_kaggle_experiments.sh
 ```
 
-Resume-режим использует `num_workers=0`, запускает только `resnet34_li_seed_{13,21,42,77,101}` и пропускает уже завершенные runs. Postprocessing sweep и sampler ablation запускаются отдельным проходом после проверки обеих seed-серий.
+Resume-режим запускает только `resnet34_li_seed_{13,21,42,77,101}` и пропускает уже завершенные runs. По умолчанию сохраняется Stage A-compatible `num_workers=2`; при нестабильном старте worker-процессов можно явно задать `RESEARCH_NUM_WORKERS=0`. Postprocessing sweep и sampler ablation запускаются отдельным проходом после проверки обеих seed-серий.
 
 После завершения A/B запусти отдельный validation-only postprocessing sweep. Повторное обучение не выполняется:
 
@@ -763,8 +763,12 @@ python -u scripts/run_sampler_ablation_stage_d.py \
   --modalities Li,Ae,SpOr \
   --seed 101 \
   --batch-size 16 \
-  --num-workers 0
+  --num-workers 2
 ```
+
+`num_workers=2` совпадает с исходной Stage A серией. Если Kaggle/Colab нестабильно запускает
+worker-процессы, можно явно передать `--num-workers 0`, но такой fallback уже не является
+строго эквивалентным исходному Stage A worker configuration. Подробности: `sampler_ablation.md`.
 
 Результаты:
 

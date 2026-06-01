@@ -1,0 +1,2 @@
+checkpoint,encoder,modalities,num_val_samples,mean_fg_iou,mean_fg_dice,pixel_accuracy,object_precision,object_recall,object_f1,weighted_competition_f1,object_iou_threshold,min_area,checkpoint_epoch,checkpoint_selection_metric,checkpoint_selection_score
+/Users/Di/Downloads/best_model.pth,resnet34,"['Li', 'Ae', 'SpOr']",601,0.08619397133588791,0.1471586674451828,0.7562676668167114,0.9603729598133024,0.48931116375020456,0.6483079711066504,0.6619464440765919,0.3,8,19,val_weighted_competition_f1,0.6620173226511827
