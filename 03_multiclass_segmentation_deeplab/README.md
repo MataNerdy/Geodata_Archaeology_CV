@@ -44,7 +44,13 @@
 | 4 | `fortifikatsii` |
 | 5 | `arkhitektury` |
 
-Это объектная задача. Pixel IoU полезен для диагностики границ, но не полностью отражает прикладное качество: грубый, но правильно локализованный полигон может быть полезнее аккуратного фрагмента маски. Поэтому для выбора модели используется взвешенный polygon-level competition F1.
+Это объектная задача.
+
+Pixel IoU полезен для диагностики границ, но не полностью отражает прикладное качество:
+
+грубый, но правильно локализованный полигон может быть полезнее аккуратного фрагмента маски.
+
+Поэтому для выбора модели используется взвешенный polygon-level competition F1.
 
 | Группа метрик | Назначение |
 |---|---|
@@ -67,15 +73,15 @@
 ```mermaid
 flowchart TD
     A["Dataset profiling"] --> B["Encoder comparison"]
-    B --> C["Research Split V1"]
+    B --> C["Research Split"]
     C --> D["Seed study"]
     D --> E["Research summary table"]
-    E --> F["Best pre-Stage-C checkpoints"]
-    F --> G["Stage C: postprocessing sweep"]
+    E --> F["Best сheckpoints"]
+    F --> G["Postprocessing sweep"]
     G --> H["Final pipeline"]
 ```
 
-Следующий этап запускается только после ответа на вопрос предыдущего. Раннее сравнение энкодеров является диагностикой. Все основные выводы о финальной модели получены позднее на зафиксированном Research Split V1.
+Следующий этап запускается только после ответа на вопрос предыдущего. Раннее сравнение энкодеров является диагностикой. Все основные выводы о финальной модели получены позднее на зафиксированном Research Split.
 
 ## Этап 1. Профилирование датасета
 
@@ -173,13 +179,13 @@ Li-only validation-подмножество не содержит объекто
 
 **ResNet34 выбран как основной энкодер проекта:** он показал более стабильный результат на мультимодальных данных и позволил сделать последующее исследование компактным.
 
-## Этап 3. Research Split V1
+## Этап 3. Research Split
 
 ### Мотивация
 
 Диагностические эксперименты помогли выбрать энкодер, но для корректного сравнения следующих моделей потребовалась единая воспроизводимая среда оценки.
 
-Research Split V1 был подготовлен один раз и сохранен как набор CSV-файлов. Сначала к сырым metadata применялась фильтрация, затем выполнялся region-aware поиск validation holdout. Во время обучения фильтрация повторно не запускается: модели используют уже материализованные frozen CSV.
+Research Split был подготовлен один раз и сохранен как набор CSV-файлов. Сначала к сырым metadata применялась фильтрация, затем выполнялся region-aware поиск validation holdout. Во время обучения фильтрация повторно не запускается: модели используют уже материализованные frozen CSV.
 
 ```mermaid
 flowchart LR
@@ -197,8 +203,7 @@ flowchart LR
 - регионы не пересекаются между частями split;
 - CSV-файлы фиксируются и переиспользуются;
 - поиск validation-регионов нельзя пересчитывать во время сравнения моделей;
-- model selection и postprocessing выполняются только на validation;
-- настоящий held-out test split пока отсутствует.
+- model selection и postprocessing выполняются только на validation.
 
 ### Конфигурация
 
@@ -226,7 +231,7 @@ splits/archaeology_5class_research_split_v1/
 
 ### Вывод этапа
 
-**Research Split V1 создал воспроизводимую исследовательскую среду без утечки регионов.** Все следующие benchmark-запуски сравниваются только внутри этого протокола.
+**Research Split создал воспроизводимую исследовательскую среду без утечки регионов.** Все следующие benchmark-запуски сравниваются только внутри этого протокола.
 
 ## Этап 4. Исследование seed
 
@@ -236,12 +241,12 @@ splits/archaeology_5class_research_split_v1/
 
 ### Эксперимент
 
-Семейство моделей намеренно оставалось узким: DeepLabV3+ ResNet34. На frozen CSV Research Split V1 были обучены две группы моделей с seeds `13`, `21`, `42`, `77`, `101`:
+Семейство моделей намеренно оставалось узким: DeepLabV3+ ResNet34. На frozen CSV Research Split были обучены две группы моделей с seeds `13`, `21`, `42`, `77`, `101`:
 
 - только `Li`;
 - мультимодальные данные `Li`, `Ae`, `SpOr`.
 
-Всего выполнено `10` сопоставимых benchmark-запусков. Значения ниже рассчитаны **до Stage C**: модели уже обучены на Research Split V1, но к их предсказаниям еще не применен подобранный postprocessing.
+Всего выполнено `10` сопоставимых benchmark-запусков. Значения ниже рассчитаны **до  постпроцессинга**: модели уже обучены на Research Split, но к их предсказаниям еще не применен подобранный postprocessing.
 
 ### Результаты для Li
 
@@ -278,18 +283,18 @@ splits/archaeology_5class_research_split_v1/
 | Этап | Лучший результат |
 |---|---:|
 | Encoder comparison | 0.6603 |
-| Research Split V1 | 0.7310 |
-| Stage C | **0.7457** |
+| Research Split | 0.7310 |
+| Postprocessing | **0.7457** |
 
-Полная таблица из `18` строк с диагностическими моделями, benchmark-запусками и Stage C pipeline-вариантами вынесена в [`reports/research_summary.md`](reports/research_summary.md).
+Полная таблица из `18` строк с диагностическими моделями, benchmark-запусками и postprocessing pipeline-вариантами вынесена в [`reports/research_summary.md`](reports/research_summary.md).
 
-## Этап 5. Отбор checkpoints для Stage C
+## Этап 5. Отбор checkpoints
 
 ### Цель отбора
 
 После seed study необходимо было выбрать небольшой набор перспективных checkpoints для настройки извлечения объектов без повторного обучения сети.
 
-| Модальности | Checkpoint | Weighted F1 до Stage C | Причина включения |
+| Модальности | Checkpoint | Weighted F1 | Причина включения |
 |---|---|---:|---|
 | `Li` | `resnet34_li_seed_101` | **0.7310** | лучший Li-only checkpoint |
 | `Li`, `Ae`, `SpOr` | `resnet34_all_seed_21` | **0.6811** | лучший мультимодальный weighted F1 |
@@ -298,15 +303,15 @@ splits/archaeology_5class_research_split_v1/
 
 ### Вывод этапа
 
-**Checkpoint с максимальным weighted F1 до Stage C не обязательно формирует лучший итоговый pipeline.** Для объектной задачи требуется отдельная настройка преобразования масок в полигоны.
+**Checkpoint с максимальным weighted F1 до  постпроцессинга не обязательно формирует лучший итоговый pipeline.** Для объектной задачи требуется отдельная настройка преобразования масок в полигоны.
 
-## Этап 6. Stage C: подбор постпроцессинга
+## Этап 6. Подбор постпроцессинга
 
 ### Мотивация
 
 Нейросеть возвращает вероятности классов для каждого пикселя. Для практического использования эти вероятности необходимо преобразовать в чистые связные объекты.
 
-Stage C проверяет, насколько можно повысить object-level качество без повторного обучения модели.
+Postprocessing sweep проверяет, насколько можно повысить object-level качество без повторного обучения модели.
 
 ### Параметры
 
@@ -330,18 +335,18 @@ Stage C проверяет, насколько можно повысить objec
 
 ### Результаты
 
-| Checkpoint | Weighted F1 до Stage C | Лучший weighted F1 | Delta | Confidence | Min area | Opening |
+| Checkpoint | Weighted F1 | Лучший weighted F1 | Delta | Confidence | Min area | Opening |
 |---|---:|---:|---:|---:|---:|---|
 | `resnet34_li_seed_101` | 0.7310 | 0.7316 | +0.0006 | 0.3 | 8 | False |
 | `resnet34_all_seed_21` | 0.6811 | 0.7246 | +0.0435 | 0.3 | 8 | True |
 | `resnet34_all_seed_77` | 0.6725 | 0.6949 | +0.0224 | 0.3 | 8 | True |
 | `resnet34_all_seed_101` | 0.6700 | **0.7457** | **+0.0757** | 0.3 | 8 | True |
 
-![Stage C для итоговой модели](assets/plots/postprocess_sweep_resnet34_all_seed_101.png)
+![Postprocessing sweep для итоговой модели](assets/plots/postprocess_sweep_resnet34_all_seed_101.png)
 
 ### Вывод этапа
 
-**Stage C изменил итоговый выбор модели.** Лучшим checkpoint до Stage C была Li-only модель, но самый сильный object-aware pipeline получен для мультимодальной ResNet34 с seed `101`.
+**Postprocessing sweep изменил итоговый выбор модели.** Лучшим checkpoint до postprocessing была Li-only модель, но самый сильный object-aware pipeline получен для мультимодальной ResNet34 с seed `101`.
 
 ## Key Findings
 
@@ -350,7 +355,7 @@ Stage C проверяет, насколько можно повысить objec
 - Результат существенно зависит от seed.
 - Object-level метрики важнее pixel IoU для прикладной задачи.
 - Постпроцессинг способен изменить выбор лучшей модели.
-- Лучший итоговый pipeline использует `Li`, `Ae`, `SpOr` и Stage C.
+- Лучший итоговый pipeline использует `Li`, `Ae`, `SpOr` и postprocessing sweep.
 
 ## Итоговый pipeline
 
@@ -367,9 +372,9 @@ Stage C проверяет, насколько можно повысить objec
 | Morphological opening | `True` |
 | Validation weighted competition F1 | **0.7457** |
 
-### Эффект Stage C
+### Эффект postprocessing sweep
 
-| Метрика | До Stage C | Итоговый pipeline |
+| Метрика | До postprocessing | Итоговый pipeline |
 |---|---:|---:|
 | Weighted competition F1 | 0.6700 | **0.7457** |
 | Object F1 | 0.7480 | **0.7995** |
@@ -378,7 +383,7 @@ Stage C проверяет, насколько можно повысить objec
 
 Постпроцессинг немного снижает precision, но заметно улучшает recall и баланс объектных метрик. Сеть не переобучалась: улучшение получено только за счет корректной настройки polygon extraction.
 
-### Per-class диагностика checkpoint до Stage C
+### Per-class диагностика checkpoint до postprocessing
 
 | Класс | Pixel IoU | Pixel Dice | Object F1 |
 |---|---:|---:|---:|
@@ -396,7 +401,7 @@ Stage C проверяет, насколько можно повысить objec
 - Построен region-aware benchmark split без пересечения регионов между train и validation.
 - Выполнено `14` обучений DeepLabV3+.
 - Проведены `4` encoder/modality ablation experiments и `10` benchmark-запусков seed study.
-- Выполнен Stage C sweep из `72` postprocessing configurations для каждого из `4` checkpoints.
+- Выполнен postprocessing sweep из `72`  configurations для каждого из `4` checkpoints.
 - Разработан воспроизводимый pipeline object-level evaluation и извлечения полигонов.
 
 ## Ограничения и анализ ошибок
@@ -430,7 +435,7 @@ Stage C проверяет, насколько можно повысить objec
 └── requirements.txt
 ```
 
-### Research Split V1
+### Research Split
 
 ```bash
 python scripts/create_research_split.py \
@@ -495,4 +500,4 @@ python -u scripts/generate_final_readme_visualizations.py \
 
 Ранние эксперименты использовали несовместимые validation-протоколы. Аудит выявил split mismatch и риск частичной validation leakage при сравнении legacy checkpoint с более поздними моделями. Эти результаты не включены в итоговый benchmark.
 
-Подробные артефакты аудита сохранены локально в `runs/audit_old_baseline_resnet34/`. Research Split V1 был введен именно для того, чтобы дальнейшие сравнения оставались воспроизводимыми.
+Подробные артефакты аудита сохранены локально в `runs/audit_old_baseline_resnet34/`. Research Split был введен именно для того, чтобы дальнейшие сравнения оставались воспроизводимыми.
