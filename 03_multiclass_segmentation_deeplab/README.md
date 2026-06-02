@@ -101,13 +101,6 @@ segmentation_dataset/
 
 ### Дисбаланс классов
 
-| Класс | Сэмплы |
-|---|---:|
-| `kurgany_povrezhdennye` | 1822 |
-| `kurgany_tselye` | 669 |
-| `fortifikatsii` | 473 |
-| `arkhitektury` | 218 |
-| `gorodishcha` | 78 |
 
 ![Дисбаланс классов](assets/dataset/class_imbalance.png)
 

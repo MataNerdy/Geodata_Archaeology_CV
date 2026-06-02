@@ -37,7 +37,7 @@ flowchart LR
 | Geodata preprocessing | [`01_geodata_to_cv`](01_geodata_to_cv/) | CRS alignment, overlay validation, dataset generation | segmentation masks, YOLO-ready bbox data |
 | Binary segmentation | [`02_unet_segmentation`](02_unet_segmentation/) | U-Net baseline for kurgan segmentation | best fg IoU = 0.6789 |
 | Multiclass segmentation | [`03_multiclass_segmentation_deeplab`](03_multiclass_segmentation_deeplab/) | flagship DeepLabV3+ research module | weighted F1 = 0.7457 |
-| Detection dataset | [`04_detection_yolo`](04_detection_yolo/) | YOLO-ready object detection dataset direction | bbox dataset / future training |
+| Detection dataset | [`04_detection_yolo`](04_detection_yolo/) | YOLO-ready object detection dataset direction | coming soon |
 
 ## Key Results
 
