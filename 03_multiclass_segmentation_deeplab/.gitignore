@@ -11,3 +11,13 @@ runs/**/train_split.csv
 runs/**/val_split.csv
 !assets/dataset/
 !assets/dataset/.gitkeep
+.venv/
+runs/
+*.zip
+*.pth
+*.pt
+*.ckpt
+__pycache__/
+*.pyc
+.DS_Store
+```

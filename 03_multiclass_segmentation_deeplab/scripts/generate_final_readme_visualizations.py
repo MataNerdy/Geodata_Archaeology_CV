@@ -577,8 +577,8 @@ def save_compact_curated_collage(
         axes[row_index, 3].set_title(sample.region, fontsize=11)
         for axis in axes[row_index]:
             axis.axis("off")
-    fig.suptitle("Selected final Stage C validation examples", fontsize=15, y=0.998)
-    fig.subplots_adjust(left=0.015, right=0.985, bottom=0.01, top=0.975, wspace=0.12, hspace=0.16)
+    fig.suptitle("Selected final Stage C validation examples", fontsize=15, y=0.995)
+    fig.subplots_adjust(left=0.015, right=0.985, bottom=0.01, top=0.945, wspace=0.12, hspace=0.16)
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=160, bbox_inches="tight")
     plt.close(fig)
