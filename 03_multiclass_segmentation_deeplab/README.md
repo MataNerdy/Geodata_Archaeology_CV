@@ -1,5 +1,4 @@
-# Сегментация археологических объектов с DeepLabV3+
-
+# Segmentation with DeepLabV3+ on Multi-Modal Archaeological Geodata
 ## Обзор проекта
 
 Этот модуль `Geodata_Archaeology_CV` посвящен многоклассовой семантической сегментации археологических объектов на данных дистанционного зондирования.
@@ -348,6 +347,17 @@ Postprocessing sweep проверяет, насколько можно повы�
 
 **Postprocessing sweep изменил итоговый выбор модели.** Лучшим checkpoint до postprocessing была Li-only модель, но самый сильный object-aware pipeline получен для мультимодальной ResNet34 с seed `101`.
 
+## Эволюция моделей на одинаковых validation patches
+
+На рисунке ниже одни и те же validation patches проходят через последовательные версии pipeline: диагностические encoder/modality модели, обученные на раннем split, и финальную ResNet34 all-modalities модель.
+
+Для каждого patch сохранены одинаковый crop, одна и та же цветовая схема классов, GT mask, предсказания всех моделей и overlay финального результата. Рядом с названием patch указаны IoU и object F1 именно для Final Stage C.
+
+![Model evolution on the same validation samples](assets/readme/model_evolution_examples.png)
+
+На этих примерах видно, что ранние diagnostic models часто дают шумные или смешанные маски даже на хорошо читаемых объектах.
+
+
 ## Key Findings
 
 - LiDAR оказался наиболее информативной отдельной модальностью.
@@ -383,15 +393,6 @@ Postprocessing sweep проверяет, насколько можно повы�
 
 Постпроцессинг немного снижает precision, но заметно улучшает recall и баланс объектных метрик. Сеть не переобучалась: улучшение получено только за счет корректной настройки polygon extraction.
 
-## Эволюция моделей на одинаковой валидационной выборке
-
-На рисунке ниже одни и те же validation patches проходят через последовательные версии pipeline: диагностические encoder/modality модели, обученные на раннем split, и финальную ResNet34 all-modalities модель.
-
-Для каждого patch сохранены одинаковый crop, одна и та же цветовая схема классов, GT mask, предсказания всех моделей и overlay финального результата. Рядом с названием patch указаны IoU и object F1 именно для Final Stage C.
-
-![Model evolution on the same validation samples](assets/readme/model_evolution_examples.png)
-
-На этих примерах видно, что ранние diagnostic models часто дают шумные или смешанные маски даже на хорошо читаемых объектах.
 
 ### Per-class диагностика checkpoint до postprocessing
 
@@ -405,6 +406,26 @@ Postprocessing sweep проверяет, насколько можно повы�
 | `arkhitektury` | 0.0127 | 0.0251 | 0.4706 |
 
 Расхождение между pixel IoU и object F1 является центральным наблюдением проекта: правильно локализованные полигоны могут быть полезны, даже если маски не идеальны на уровне пикселей.
+
+## Final Result
+
+The final pipeline combines:
+
+- DeepLabV3+
+- ResNet34 encoder
+- Li + Ae + SpOr modalities
+- Research Split V1
+- Seed 101
+- Postprocessing sweep
+
+Final validation performance:
+
+| Metric | Value |
+|---------|-------:|
+| Weighted competition F1 | **0.7457** |
+| Object F1 | **0.7995** |
+| Precision | 0.9114 |
+| Recall | 0.7120 |
 
 ## Research Contributions
 
@@ -425,9 +446,15 @@ Postprocessing sweep проверяет, насколько можно повы�
 | Отсутствие held-out test | model selection выполнен на validation | создать отдельный test protocol |
 | Чувствительность к seed | обнаружена в десяти benchmark-запусках | сравнивать серии запусков, а не одиночные checkpoints |
 
+## Representative predictions
+
+Ниже показаны пять лучших validation patches для финального pipeline. Ранжирование выполнено по patch-level `object_f1` и `weighted score`.
+
+![Representative predictions](assets/predictions/final_resnet34_all_seed_101.png)
+
 ## Representative failure cases
 
-Ниже показаны пять худших validation patches для финального Stage C pipeline. Ранжирование выполнено по patch-level `object_f1` и `weighted score`, а не по IoU.
+Ниже показаны пять худших validation patches для финального pipeline. Ранжирование выполнено по patch-level `object_f1` и `weighted score`.
 
 ![Representative failure cases](reports/figures/failure_cases.png)
 
