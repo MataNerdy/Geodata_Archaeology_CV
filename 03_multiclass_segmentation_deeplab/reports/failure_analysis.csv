@@ -1,0 +1,17 @@
+gt_class,predicted_dominant_class,count
+kurgany_povrezhdennye,background,1052
+kurgany_tselye,background,624
+kurgany_tselye,kurgany_povrezhdennye,231
+fortifikatsii,background,170
+arkhitektury,background,157
+gorodishcha,background,55
+gorodishcha,kurgany_povrezhdennye,48
+kurgany_povrezhdennye,kurgany_tselye,46
+fortifikatsii,kurgany_povrezhdennye,41
+fortifikatsii,kurgany_tselye,24
+kurgany_povrezhdennye,fortifikatsii,12
+arkhitektury,kurgany_tselye,8
+kurgany_tselye,fortifikatsii,4
+arkhitektury,fortifikatsii,2
+fortifikatsii,arkhitektury,1
+gorodishcha,kurgany_tselye,1

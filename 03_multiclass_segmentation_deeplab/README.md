@@ -4,15 +4,15 @@
 
 Этот модуль `Geodata_Archaeology_CV` посвящен многоклассовой семантической сегментации археологических объектов на данных дистанционного зондирования.
 
- Произведено воспроизводимое ML-исследование.
+Проект оформлен как воспроизводимое ML-исследование.
 
- Каждый этап отвечает на отдельный вопрос:
+Каждый этап отвечает на отдельный вопрос:
 
- - какие данные наиболее информативны,
- - достаточно ли ResNet34,
- - как зафиксировать честный benchmark,
- - насколько результат зависит от seed,
- - можно ли улучшить извлечение объектов без повторного обучения нейросети.
+- какие данные наиболее информативны,
+- достаточно ли ResNet34,
+- как зафиксировать честный benchmark,
+- насколько результат зависит от seed,
+- можно ли улучшить извлечение объектов без повторного обучения нейросети.
 
 ![Примеры предсказаний итоговой модели ResNet34](assets/predictions/final_resnet34_all_seed_101.png)
 
@@ -71,12 +71,12 @@ Pixel IoU полезен для диагностики границ, но не �
 ## Логика исследования
 
 ```mermaid
-flowchart TD
+flowchart LR
     A["Dataset profiling"] --> B["Encoder comparison"]
     B --> C["Research Split"]
     C --> D["Seed study"]
     D --> E["Research summary table"]
-    E --> F["Best сheckpoints"]
+    E --> F["Best checkpoints"]
     F --> G["Postprocessing sweep"]
     G --> H["Final pipeline"]
 ```
@@ -171,7 +171,7 @@ segmentation_dataset/
 
 На LiDAR ResNet50 дал небольшой прирост mean foreground IoU. На полном наборе модальностей преимущество исчезло: ResNet34 показал более высокий mean foreground IoU, object F1 и weighted F1. Увеличение глубины энкодера не дало устойчивого выигрыша.
 
-Li-only validation-подмножество не содержит объектов `arkhitektury`, поэтому результаты этой серии нельзя использовать как итоговый benchmark. Их задача — выбрать разумное направление дальнейшего исследования.
+Li-only validation-подмножество не содержит объектов `arkhitektury`, поэтому результаты этой серии нельзя использовать как итоговый benchmark. Их задача — помочь выбрать разумное направление дальнейшего исследования.
 
 ![Confusion matrix ResNet34 на сырых данных и всех модальностях](assets/plots/raw_ablation_resnet34_all_confusion_matrix.png)
 
@@ -246,7 +246,7 @@ splits/archaeology_5class_research_split_v1/
 - только `Li`;
 - мультимодальные данные `Li`, `Ae`, `SpOr`.
 
-Всего выполнено `10` сопоставимых benchmark-запусков. Значения ниже рассчитаны **до  постпроцессинга**: модели уже обучены на Research Split, но к их предсказаниям еще не применен подобранный postprocessing.
+Всего выполнено `10` сопоставимых benchmark-запусков. Значения ниже рассчитаны **до постпроцессинга**: модели уже обучены на Research Split, но к их предсказаниям еще не применен подобранный postprocessing.
 
 ### Результаты для Li
 
@@ -303,7 +303,7 @@ splits/archaeology_5class_research_split_v1/
 
 ### Вывод этапа
 
-**Checkpoint с максимальным weighted F1 до  постпроцессинга не обязательно формирует лучший итоговый pipeline.** Для объектной задачи требуется отдельная настройка преобразования масок в полигоны.
+**Checkpoint с максимальным weighted F1 до постпроцессинга не обязательно формирует лучший итоговый pipeline.** Для объектной задачи требуется отдельная настройка преобразования масок в полигоны.
 
 ## Этап 6. Подбор постпроцессинга
 
@@ -383,6 +383,16 @@ Postprocessing sweep проверяет, насколько можно повы�
 
 Постпроцессинг немного снижает precision, но заметно улучшает recall и баланс объектных метрик. Сеть не переобучалась: улучшение получено только за счет корректной настройки polygon extraction.
 
+## Эволюция моделей на одинаковой валидационной выборке
+
+На рисунке ниже одни и те же validation patches проходят через последовательные версии pipeline: диагностические encoder/modality модели, обученные на раннем split, и финальную ResNet34 all-modalities модель.
+
+Для каждого patch сохранены одинаковый crop, одна и та же цветовая схема классов, GT mask, предсказания всех моделей и overlay финального результата. Рядом с названием patch указаны IoU и object F1 именно для Final Stage C.
+
+![Model evolution on the same validation samples](assets/readme/model_evolution_examples.png)
+
+На этих примерах видно, что ранние diagnostic models часто дают шумные или смешанные маски даже на хорошо читаемых объектах.
+
 ### Per-class диагностика checkpoint до postprocessing
 
 | Класс | Pixel IoU | Pixel Dice | Object F1 |
@@ -401,7 +411,7 @@ Postprocessing sweep проверяет, насколько можно повы�
 - Построен region-aware benchmark split без пересечения регионов между train и validation.
 - Выполнено `14` обучений DeepLabV3+.
 - Проведены `4` encoder/modality ablation experiments и `10` benchmark-запусков seed study.
-- Выполнен postprocessing sweep из `72`  configurations для каждого из `4` checkpoints.
+- Выполнен postprocessing sweep из `72` configurations для каждого из `4` checkpoints.
 - Разработан воспроизводимый pipeline object-level evaluation и извлечения полигонов.
 
 ## Ограничения и анализ ошибок
@@ -414,6 +424,21 @@ Postprocessing sweep проверяет, насколько можно повы�
 | Дисбаланс модальностей | классы представлены в источниках неравномерно | исследовать modality-specific normalization |
 | Отсутствие held-out test | model selection выполнен на validation | создать отдельный test protocol |
 | Чувствительность к seed | обнаружена в десяти benchmark-запусках | сравнивать серии запусков, а не одиночные checkpoints |
+
+## Representative failure cases
+
+Ниже показаны пять худших validation patches для финального Stage C pipeline. Ранжирование выполнено по patch-level `object_f1` и `weighted score`, а не по IoU.
+
+![Representative failure cases](reports/figures/failure_cases.png)
+
+## Failure analysis
+
+- Основной режим ошибки — пропуск объекта: 83.1% failed GT components имеют dominant prediction `background`.
+- Самый большой вклад в абсолютное число failed components дает `kurgany_povrezhdennye`. Это связано не только с качеством модели, но и с тем, что этот класс самый массовый в validation.
+- Самая частая foreground-to-foreground путаница: `kurgany_tselye -> kurgany_povrezhdennye`. Следующие заметные переходы: `gorodishcha -> kurgany_povrezhdennye` и `fortifikatsii -> kurgany_povrezhdennye`.
+- В визуальной Top-5 worst галерее четыре из пяти относятся к `fortifikatsii` и локализованы в регионах `005_ЛУБНО` / `006_МОСКОВИТЫ`. Эти случаи показывают тяжелую путаницу протяженных фортификационных форм с курганными масками.
+
+Полная таблица переходов сохранена в `reports/failure_analysis.csv`, автоматический summary — в `reports/failure_summary.md`.
 
 ## Воспроизводимость
 
@@ -494,7 +519,7 @@ python -u scripts/generate_final_readme_visualizations.py \
 2. Исследовать class-aware sampling для `gorodishcha` и `arkhitektury`.
 3. Проверить modality-specific normalization для мультимодальной модели.
 4. Добавить checksums snapshot датасета и lock-файл окружения.
-6. Провести контролируемую sampler ablation без изменения frozen benchmark.
+5. Провести контролируемую sampler ablation без изменения frozen benchmark.
 
 ## Приложение: аудит ранних экспериментов
 

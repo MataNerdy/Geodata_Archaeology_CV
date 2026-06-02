@@ -60,6 +60,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import cv2
 import numpy as np
 import pandas as pd
 import torch
@@ -142,6 +143,16 @@ def parse_args() -> argparse.Namespace:
         help="Optional output directory for --best-only mode.",
     )
     parser.add_argument(
+        "--worst-only",
+        action="store_true",
+        help="Save only individual top-N worst final Stage C prediction panels.",
+    )
+    parser.add_argument(
+        "--worst-output-dir",
+        default=None,
+        help="Optional output directory for --worst-only mode.",
+    )
+    parser.add_argument(
         "--curated-only",
         action="store_true",
         help="Save one compact README collage for an explicit ordered list of sample IDs.",
@@ -157,6 +168,12 @@ def parse_args() -> argparse.Namespace:
         default="assets/predictions/final_resnet34_all_seed_101.png",
         help="Output PNG for --curated-only mode.",
     )
+    parser.add_argument(
+        "--failure-analysis-only",
+        action="store_true",
+        help="Save representative Stage C failure cases and object-level failure statistics.",
+    )
+    parser.add_argument("--failure-output-dir", default="reports")
     return parser.parse_args()
 
 
@@ -207,6 +224,12 @@ def main() -> None:
 
     if args.best_only:
         save_best_only_gallery(results, args)
+        return
+    if args.worst_only:
+        save_worst_only_gallery(results, args)
+        return
+    if args.failure_analysis_only:
+        save_failure_analysis_report(results, args)
         return
     if args.curated_only:
         save_curated_gallery(results, curated_ids, args)
@@ -316,6 +339,63 @@ def save_best_only_gallery(results: list[SampleResult], args: argparse.Namespace
     save_ranked_examples(best, output_dir, "best", args)
     save_manifest(best, output_dir / "manifest.csv")
     print(f"[readme-viz] saving images: done ({output_dir})", flush=True)
+
+
+def save_worst_only_gallery(results: list[SampleResult], args: argparse.Namespace) -> None:
+    """Save only top-N individual worst final Stage C prediction panels."""
+
+    if args.top_n < 1:
+        raise ValueError("--top-n must be greater than zero")
+    print(f"[readme-viz] sorting samples: selecting top-{args.top_n} worst validation patches", flush=True)
+    foreground = [item for item in results if item.gt_objects > 0]
+    worst = sorted(
+        foreground,
+        key=lambda item: (
+            round(item.object_f1, 4),
+            item.mean_object_iou,
+            round(item.weighted_contribution, 4),
+        ),
+    )[: args.top_n]
+    output_dir = (
+        Path(args.worst_output_dir)
+        if args.worst_output_dir
+        else Path(args.assets_root) / "failures" / f"top{args.top_n}_worst_final"
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    archive_root = Path(args.assets_root) / "archive" / f"worst_only_{datetime.now():%Y%m%d_%H%M%S}"
+    archive_previous_gallery(output_dir, archive_root)
+    print(f"[readme-viz] saving images: top-{len(worst)} worst final Stage C patches", flush=True)
+    save_ranked_examples(worst, output_dir, "worst", args)
+    save_manifest(worst, output_dir / "manifest.csv")
+    print(f"[readme-viz] saving images: done ({output_dir})", flush=True)
+
+
+def save_failure_analysis_report(results: list[SampleResult], args: argparse.Namespace) -> None:
+    """Save representative failures, transition counts and a Markdown summary."""
+
+    report_dir = Path(args.failure_output_dir)
+    figure = report_dir / "figures" / "failure_cases.png"
+    csv_output = report_dir / "failure_analysis.csv"
+    markdown_output = report_dir / "failure_summary.md"
+    foreground = [item for item in results if item.gt_objects > 0]
+    print("[readme-viz] sorting samples: selecting top-5 worst final Stage C patches", flush=True)
+    worst = sorted(
+        foreground,
+        key=lambda item: (
+            round(item.object_f1, 4),
+            round(item.weighted_contribution, 4),
+        ),
+    )[:5]
+    print(f"[readme-viz] saving images: {figure}", flush=True)
+    save_compact_failure_collage(worst, figure, args)
+    print("[readme-viz] computing metrics: aggregating GT-to-predicted-class failure transitions", flush=True)
+    failure_counts = aggregate_failure_transitions(results)
+    csv_output.parent.mkdir(parents=True, exist_ok=True)
+    failure_counts.to_csv(csv_output, index=False)
+    print(f"[readme-viz] saving images: {csv_output}", flush=True)
+    markdown_output.write_text(failure_summary_markdown(failure_counts, figure), encoding="utf-8")
+    print(f"[readme-viz] saving images: {markdown_output}", flush=True)
+    print("[readme-viz] saving images: done", flush=True)
 
 
 def select_diverse_worst(samples: list[SampleResult], limit: int) -> list[SampleResult]:
@@ -582,6 +662,130 @@ def save_compact_curated_collage(
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=160, bbox_inches="tight")
     plt.close(fig)
+
+
+def save_compact_failure_collage(
+    samples: list[SampleResult],
+    output: Path,
+    args: argparse.Namespace,
+) -> None:
+    """Save a dense README-ready collage for the lowest object-level scores."""
+
+    fig, axes = plt.subplots(len(samples), 4, figsize=(15, 3.15 * len(samples)))
+    if len(samples) == 1:
+        axes = np.expand_dims(axes, axis=0)
+    for row_index, sample in enumerate(samples):
+        image = stretch(sample.image)
+        axes[row_index, 0].imshow(image, cmap="gray")
+        axes[row_index, 0].set_title(
+            f"{sample.region} | {sample.sample_id}\n"
+            f"GT={sample.main_class} | object_f1={sample.object_f1:.3f} | "
+            f"weighted={sample.weighted_contribution:.3f}",
+            fontsize=9,
+        )
+        axes[row_index, 1].imshow(colorize_mask(sample.gt, args.task))
+        axes[row_index, 1].set_title("GT", fontsize=11)
+        axes[row_index, 2].imshow(colorize_mask(sample.final_pred, args.task))
+        axes[row_index, 2].set_title("Prediction", fontsize=11)
+        axes[row_index, 3].imshow(image, cmap="gray")
+        axes[row_index, 3].imshow(mask_overlay(sample.final_pred, args.task))
+        axes[row_index, 3].set_title("Overlay", fontsize=11)
+        for axis in axes[row_index]:
+            axis.axis("off")
+    fig.suptitle("Representative failure cases: final Stage C model", fontsize=15, y=0.995)
+    fig.subplots_adjust(left=0.015, right=0.985, bottom=0.01, top=0.94, wspace=0.12, hspace=0.24)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+
+
+def aggregate_failure_transitions(samples: list[SampleResult]) -> pd.DataFrame:
+    """Count dominant predicted classes for GT objects that were not classified correctly."""
+
+    rows = []
+    for index, sample in enumerate(samples, start=1):
+        for class_id, class_name in CLASS_NAMES.items():
+            binary = (sample.gt == class_id).astype(np.uint8)
+            component_count, labels = cv2.connectedComponents(binary)
+            for component_id in range(1, component_count):
+                predicted_class = dominant_predicted_class(sample.final_pred[labels == component_id])
+                if predicted_class != class_name:
+                    rows.append({"gt_class": class_name, "predicted_dominant_class": predicted_class})
+        if index % 20 == 0 or index == len(samples):
+            print(f"[readme-viz] computing metrics: failure transitions {index}/{len(samples)} samples", flush=True)
+    if not rows:
+        return pd.DataFrame(columns=["gt_class", "predicted_dominant_class", "count"])
+    return (
+        pd.DataFrame(rows)
+        .value_counts(["gt_class", "predicted_dominant_class"])
+        .rename("count")
+        .reset_index()
+        .sort_values(["count", "gt_class", "predicted_dominant_class"], ascending=[False, True, True])
+        .reset_index(drop=True)
+    )
+
+
+def dominant_predicted_class(predicted_pixels: np.ndarray) -> str:
+    """Return the dominant Stage C prediction inside one GT component."""
+
+    counts = np.bincount(predicted_pixels.astype(np.int64), minlength=max(CLASS_NAMES) + 1)
+    dominant_id = int(counts.argmax())
+    return CLASS_NAMES.get(dominant_id, "background")
+
+
+def failure_summary_markdown(failure_counts: pd.DataFrame, figure: Path) -> str:
+    """Generate README-ready Markdown conclusions from observed transition counts."""
+
+    total = int(failure_counts["count"].sum()) if not failure_counts.empty else 0
+    background = int(
+        failure_counts.loc[failure_counts["predicted_dominant_class"] == "background", "count"].sum()
+    )
+    confusion = total - background
+    background_share = background / total if total else 0.0
+    class_totals = failure_counts.groupby("gt_class", as_index=False)["count"].sum().sort_values("count", ascending=False)
+    dominant_failure_class = class_totals.iloc[0] if not class_totals.empty else None
+    foreground_confusions = failure_counts[failure_counts["predicted_dominant_class"] != "background"]
+    top_patterns = failure_counts.head(5)
+    figure_link = figure.as_posix()
+    lines = [
+        "## Representative failure cases",
+        "",
+        "The collage contains the five lowest-scoring validation patches for the final Stage C pipeline, "
+        "ranked by patch-level object F1 and weighted score.",
+        "",
+        f"![Representative failure cases]({figure_link})",
+        "",
+        "## Failure analysis",
+        "",
+    ]
+    if total == 0:
+        lines.append("- No GT-to-predicted-class failures were observed.")
+        return "\n".join(lines) + "\n"
+    lines.append(
+        f"- The analysis contains `{total}` GT objects whose dominant predicted class differs from the annotation: "
+        f"`{background}` map to `background`, while `{confusion}` map to another foreground class."
+    )
+    if dominant_failure_class is not None:
+        lines.append(
+            f"- `{dominant_failure_class['gt_class']}` contributes the largest number of failed GT objects: "
+            f"`{int(dominant_failure_class['count'])}`."
+        )
+    if not foreground_confusions.empty:
+        top_confusion = foreground_confusions.iloc[0]
+        lines.append(
+            f"- The strongest foreground-to-foreground confusion is "
+            f"`{top_confusion['gt_class']} -> {top_confusion['predicted_dominant_class']}` "
+            f"with `{int(top_confusion['count'])}` objects."
+        )
+    if background_share >= 0.5:
+        lines.append(
+            f"- Full or near-full misses dominate: `{background_share:.1%}` of failed GT objects are classified "
+            "as `background` inside the annotated component."
+        )
+    lines.append("- Most frequent observed failure transitions:")
+    for row in top_patterns.itertuples(index=False):
+        lines.append(f"  - `{row.gt_class} -> {row.predicted_dominant_class}`: `{row.count}` objects.")
+    return "\n".join(lines) + "\n"
 
 
 def draw_prediction_row(axes, sample: SampleResult, args: argparse.Namespace) -> None:
