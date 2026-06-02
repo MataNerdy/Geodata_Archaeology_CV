@@ -13,22 +13,9 @@
 - насколько результат зависит от seed,
 - можно ли улучшить извлечение объектов без повторного обучения нейросети.
 
-![Примеры предсказаний итоговой модели ResNet34](assets/predictions/final_resnet34_all_seed_101.png)
+![Model evolution on the same validation samples](assets/readme/model_evolution_examples.png)
 
-**Итоговый pipeline**
-
-| Компонент | Выбранное значение |
-|---|---|
-| Архитектура | DeepLabV3+ |
-| Энкодер | ResNet34 |
-| Модальности | `Li`, `Ae`, `SpOr` |
-| Research split | `archaeology_5class_research_split_v1` |
-| Seed | `101` |
-| Confidence threshold | `0.3` |
-| Минимальная площадь компоненты | `8 px` |
-| Morphological opening | `True` |
-| Validation weighted competition F1 | **0.7457** |
-
+Финальная версия проекта — DeepLabV3+ с ResNet34 encoder, модальностями `Li`, `Ae`, `SpOr` и Stage C postprocessing. Подробная конфигурация pipeline и финальные метрики вынесены в отдельные разделы ниже, чтобы не смешивать выбор модели с оценкой результата.
 
 ## Постановка задачи
 
@@ -159,7 +146,7 @@ segmentation_dataset/
 
 На сырых metadata без дополнительной фильтрации были обучены четыре диагностические модели DeepLabV3+. Во всех запусках использовались image size `256`, batch size `8`, learning rate `1e-3`, CE + Dice loss и одинаковое распределение регионов между train и validation.
 
-| Эксперимент | Энкодер | Модальности | Best epoch | Mean fg IoU | Pixel accuracy | Object F1 | Weighted F1 |
+| Эксперимент | Энкодер | Модальности | Best epoch | Mean fg IoU | Pixel accuracy | Object F1 | Weighted competition F1 |
 |---|---|---|---:|---:|---:|---:|---:|
 | `resnet34_li` | ResNet34 | `Li` | 23 | 0.1510 | 0.5770 | 0.4195 | 0.3421 |
 | `resnet50_li` | ResNet50 | `Li` | 40 | **0.1589** | 0.5943 | 0.6058 | 0.4832 |
@@ -168,11 +155,13 @@ segmentation_dataset/
 
 ### Интерпретация
 
-На LiDAR ResNet50 дал небольшой прирост mean foreground IoU. На полном наборе модальностей преимущество исчезло: ResNet34 показал более высокий mean foreground IoU, object F1 и weighted F1. Увеличение глубины энкодера не дало устойчивого выигрыша.
+На LiDAR ResNet50 дал небольшой прирост mean foreground IoU. На полном наборе модальностей преимущество исчезло: ResNet34 показал более высокий mean foreground IoU, object F1 и Weighted competition F1. Увеличение глубины энкодера не дало устойчивого выигрыша.
 
 Li-only validation-подмножество не содержит объектов `arkhitektury`, поэтому результаты этой серии нельзя использовать как итоговый benchmark. Их задача — помочь выбрать разумное направление дальнейшего исследования.
 
-![Confusion matrix ResNet34 на сырых данных и всех модальностях](assets/plots/raw_ablation_resnet34_all_confusion_matrix.png)
+![Diagnostic confusion matrix ResNet34 на сырых данных и всех модальностях](assets/plots/raw_ablation_resnet34_all_confusion_matrix.png)
+
+Эта confusion matrix относится к diagnostic run на раннем ablation split. Она помогает понять поведение модели, но не является результатом final Stage C pipeline.
 
 ### Вывод этапа
 
@@ -249,7 +238,7 @@ splits/archaeology_5class_research_split_v1/
 
 ### Результаты для Li
 
-| Seed | Best epoch | Weighted F1 | Object F1 | Precision | Recall | Mean fg IoU |
+| Seed | Best epoch | Weighted competition F1 | Object F1 | Precision | Recall | Mean fg IoU |
 |---:|---:|---:|---:|---:|---:|---:|
 | 13 | 33 | 0.6902 | 0.7522 | 0.7427 | 0.7620 | 0.1225 |
 | 21 | 42 | 0.7151 | 0.7783 | 0.8333 | 0.7300 | 0.1276 |
@@ -259,7 +248,7 @@ splits/archaeology_5class_research_split_v1/
 
 ### Результаты для Li, Ae и SpOr
 
-| Seed | Best epoch | Weighted F1 | Object F1 | Precision | Recall | Mean fg IoU |
+| Seed | Best epoch | Weighted competition F1 | Object F1 | Precision | Recall | Mean fg IoU |
 |---:|---:|---:|---:|---:|---:|---:|
 | 13 | 19 | 0.6620 | 0.6484 | **0.9609** | 0.4893 | 0.0862 |
 | 21 | 24 | **0.6811** | 0.6802 | 0.9456 | 0.5312 | **0.0938** |
@@ -269,7 +258,7 @@ splits/archaeology_5class_research_split_v1/
 
 ### Интерпретация
 
-Разброс результатов заметен в обеих группах. Лучший seed зависит от метрики: например, среди мультимодальных моделей seed `21` лидирует по weighted F1, а seed `101` — по object F1 и recall.
+Разброс результатов заметен в обеих группах. Лучший seed зависит от метрики: например, среди мультимодальных моделей seed `21` лидирует по Weighted competition F1, а seed `101` — по object F1 и recall.
 
 ### Вывод этапа
 
@@ -277,13 +266,13 @@ splits/archaeology_5class_research_split_v1/
 
 ## Сводная таблица исследования
 
-Короткая таблица показывает, как менялся лучший weighted F1 на каждом этапе.
+Короткая таблица показывает, как менялся лучший Weighted competition F1 на каждом этапе.
 
 | Этап | Лучший результат |
 |---|---:|
 | Encoder comparison | 0.6603 |
 | Research Split | 0.7310 |
-| Postprocessing | **0.7457** |
+| Postprocessing sweep | **0.7457** |
 
 Полная таблица из `18` строк с диагностическими моделями, benchmark-запусками и postprocessing pipeline-вариантами вынесена в [`reports/research_summary.md`](reports/research_summary.md).
 
@@ -293,16 +282,16 @@ splits/archaeology_5class_research_split_v1/
 
 После seed study необходимо было выбрать небольшой набор перспективных checkpoints для настройки извлечения объектов без повторного обучения сети.
 
-| Модальности | Checkpoint | Weighted F1 | Причина включения |
+| Модальности | Checkpoint | Weighted competition F1 | Причина включения |
 |---|---|---:|---|
 | `Li` | `resnet34_li_seed_101` | **0.7310** | лучший Li-only checkpoint |
-| `Li`, `Ae`, `SpOr` | `resnet34_all_seed_21` | **0.6811** | лучший мультимодальный weighted F1 |
+| `Li`, `Ae`, `SpOr` | `resnet34_all_seed_21` | **0.6811** | лучший мультимодальный Weighted competition F1 |
 | `Li`, `Ae`, `SpOr` | `resnet34_all_seed_77` | 0.6725 | более высокий object recall |
 | `Li`, `Ae`, `SpOr` | `resnet34_all_seed_101` | 0.6700 | лучший мультимодальный object F1 и recall |
 
 ### Вывод этапа
 
-**Checkpoint с максимальным weighted F1 до постпроцессинга не обязательно формирует лучший итоговый pipeline.** Для объектной задачи требуется отдельная настройка преобразования масок в полигоны.
+**Checkpoint с максимальным Weighted competition F1 до постпроцессинга не обязательно формирует лучший итоговый pipeline.** Для объектной задачи требуется отдельная настройка преобразования масок в полигоны.
 
 ## Этап 6. Подбор постпроцессинга
 
@@ -334,7 +323,7 @@ Postprocessing sweep проверяет, насколько можно повы�
 
 ### Результаты
 
-| Checkpoint | Weighted F1 | Лучший weighted F1 | Delta | Confidence | Min area | Opening |
+| Checkpoint | Weighted competition F1 | Лучший Weighted competition F1 | Delta | Confidence | Min area | Opening |
 |---|---:|---:|---:|---:|---:|---|
 | `resnet34_li_seed_101` | 0.7310 | 0.7316 | +0.0006 | 0.3 | 8 | False |
 | `resnet34_all_seed_21` | 0.6811 | 0.7246 | +0.0435 | 0.3 | 8 | True |
@@ -347,7 +336,7 @@ Postprocessing sweep проверяет, насколько можно повы�
 
 **Postprocessing sweep изменил итоговый выбор модели.** Лучшим checkpoint до postprocessing была Li-only модель, но самый сильный object-aware pipeline получен для мультимодальной ResNet34 с seed `101`.
 
-## Эволюция моделей на одинаковых validation patches
+## Model evolution on the same validation samples
 
 На рисунке ниже одни и те же validation patches проходят через последовательные версии pipeline: диагностические encoder/modality модели, обученные на раннем split, и финальную ResNet34 all-modalities модель.
 
@@ -375,12 +364,11 @@ Postprocessing sweep проверяет, насколько можно повы�
 | Энкодер | ResNet34 |
 | Входные каналы | 1 |
 | Модальности | `Li`, `Ae`, `SpOr` |
-| Split | `archaeology_5class_research_split_v1` |
+| Research Split | `archaeology_5class_research_split_v1` |
 | Seed | `101` |
 | Confidence threshold | `0.3` |
 | Minimum component area | `8 px` |
 | Morphological opening | `True` |
-| Validation weighted competition F1 | **0.7457** |
 
 ### Эффект postprocessing sweep
 
@@ -414,7 +402,7 @@ The final pipeline combines:
 - DeepLabV3+
 - ResNet34 encoder
 - Li + Ae + SpOr modalities
-- Research Split V1
+- Research Split `archaeology_5class_research_split_v1`
 - Seed 101
 - Postprocessing sweep
 

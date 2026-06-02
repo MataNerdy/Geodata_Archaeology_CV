@@ -6,6 +6,8 @@ __pycache__/
 .ipynb_checkpoints/
 *.ipynb_checkpoints/
 
+.venv/
+
 dataset/
 datasets/
 images/
@@ -20,6 +22,7 @@ runs/**/history.csv
 *.pth
 *.pt
 *.ckpt
+*.zip
 
 .env
 .DS_Store
