@@ -1,0 +1,6 @@
+class_name,sample_id,region,modality,foreground_pixels
+kurgany_tselye,000545,025_ШУМГОРА,Li,369942
+kurgany_povrezhdennye,000507,021_НОВОТИТАРОВСКАЯ,Li,537210
+gorodishcha,000362,016_ЗОЛОТАРЕВКА,Li,3809502
+fortifikatsii,000013,006_МОСКОВИТЫ,Li,6442296
+arkhitektury,002580,057_ШИШКИНО,Ae,68720

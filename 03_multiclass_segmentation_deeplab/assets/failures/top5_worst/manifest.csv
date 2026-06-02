@@ -1,0 +1,6 @@
+sample_id,region,modality,main_class,object_f1,mean_object_iou,weighted_contribution,raw_object_f1,raw_weighted_contribution,delta_weighted_contribution,gt_objects,pred_objects
+000003,005_ЛУБНО,Li,gorodishcha,0.0,0.0,0.0,0.0,0.0,0.0,4,3
+000011,005_ЛУБНО,Li,fortifikatsii,0.0,0.0,0.0,0.0,0.0,0.0,4,10
+000189,008_СЕЛЯНЕ,Ae,kurgany_povrezhdennye,0.0,0.0,0.0,0.0,0.0,0.0,7,2
+000196,008_СЕЛЯНЕ,Ae,kurgany_tselye,0.0,0.0,0.0,0.0,0.0,0.0,7,4
+002713,075_Сары_Булун,SpOr,arkhitektury,0.0,0.0,0.0,0.0,0.0,0.0,5,3
