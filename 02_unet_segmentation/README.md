@@ -1,81 +1,35 @@
-# Kurgan Segmentation with U-Net on Multi-Modal Archaeological Geodata
+# Binary Kurgan Segmentation with U-Net
 
+## Обзор
 
+Этот модуль посвящен построению базовой модели семантической сегментации курганов на археологических геоданных.
 
-Экспериментальный CV-пайплайн для semantic segmentation археологических объектов на многомодальных геоданных с фокусом на курганы и LiDAR morphology.
+Цель этапа - проверить, насколько хорошо легкая U-Net архитектура решает более узкую задачу:
 
-Проект исследует, насколько разные типы геоданных подходят для автоматического выделения археологических структур:
+> можно ли надежно выделять курганы как единый foreground-класс?
 
-- LiDAR;
-- аэрофотоснимки (Ae);
-- спутниковые изображения (SpOr);
-- их комбинации.
+Модуль стал baseline-этапом перед переходом к более сложному исследованию DeepLabV3+ в `03_multiclass_segmentation_deeplab`.
 
-Основная цель проекта — построить воспроизводимый segmentation baseline и исследовать:
+![Binary LiDAR segmentation](assets/readme/hero_binary_shumgora_medium.png)
 
-- влияние модальности;
+*Binary LiDAR segmentation: input image, ground truth, prediction and overlay.*
+
+## Исследовательский вопрос
+
+Можно ли построить устойчивый binary segmentation baseline для курганов на многомодальных археологических данных?
+
+В этом модуле проверялись:
+
+- влияние модальности: `Li`, `Ae`, `SpOr`;
 - multiclass vs binary formulation;
-- Dice Loss;
-- image size;
+- BCE vs Dice loss;
 - threshold calibration;
-- hard negatives из других археологических классов.
+- влияние image size;
+- роль hard negatives из других археологических классов.
 
----
+## Dataset And Task
 
-![Hero](assets/readme/hero_binary_shumgora_medium.png)
-
-*Binary LiDAR segmentation: Image | Ground Truth | Prediction | Overlay.*
-
----
-
-# STAR
-
-## Situation
-
-Археологическая сегментация на геоданных — сложная CV-задача:
-
-- объекты маленькие;
-- foreground сильно меньше background;
-- morphology отличается между регионами;
-- данные мультимодальны;
-- спутниковые изображения имеют низкое spatial resolution;
-- аэрофотоснимки содержат сильный domain shift;
-- LiDAR хранит рельеф, но шумный и неоднородный.
-
-Дополнительно dataset содержит разные типы археологических объектов:
-
-- курганы;
-- городища;
-- фортификации;
-- архитектурные структуры.
-
-Это создаёт сложные hard negatives:
-модель должна отличать курганы от других morphology-rich archaeological объектов.
-
----
-
-## Task
-
-Построить воспроизводимый segmentation pipeline:
-
-- реализовать UNet baseline;
-- поддержать multiclass и binary режимы;
-- исследовать влияние:
-  - модальности,
-  - Dice loss,
-  - class weights,
-  - threshold,
-  - image size;
-- провести controlled experiments;
-- определить лучший baseline перед переходом к DeepLabV3+.
-
----
-
-## Action
-
-### Dataset Pipeline
-
-Используется patch-based датасет:
+Исходный patch-based dataset был подготовлен в модуле `01_geodata_to_cv`.
 
 ```text
 datasets/segmentation_dataset/
@@ -86,469 +40,146 @@ datasets/segmentation_dataset/
 
 Поддерживаемые модальности:
 
-- `Li`
-- `Ae`
-- `SpOr`
-
----
-
-### Multiclass Mode
-
-| Class | Description |
+| Модальность | Описание |
 |---|---|
-| 0 | background |
-| 1 | whole kurgan |
-| 2 | damaged kurgan |
+| `Li` | LiDAR-derived raster |
+| `Ae` | aerial imagery |
+| `SpOr` | satellite / orthophoto imagery |
 
-Дополнительные археологические классы автоматически маппятся в background.
+В binary mode все курганы объединяются в один foreground-класс:
 
----
-
-### Binary Kurgan Mode
-
-| Class | Description |
+| Original class | Binary class |
 |---|---|
-| 0 | background |
-| 1 | any kurgan |
+| `kurgany_tselye` | foreground |
+| `kurgany_povrezhdennye` | foreground |
+| `background` | background |
+| `gorodishcha` | background / hard negative |
+| `fortifikatsii` | background / hard negative |
+| `arkhitektury` | background / hard negative |
 
-Binary mask формируется явно:
+Это важно: другие археологические объекты остаются в данных как hard negatives, потому что визуально они могут быть похожи на курганы.
 
-```python
-mask = np.isin(mask, [1, 2])
-```
-
-где:
-
-- `1` — whole kurgan;
-- `2` — damaged kurgan.
-
-Другие археологические классы рассматриваются как hard negatives:
-
-- `3` — gorodishcha;
-- `4` — fortifikatsii;
-- `5` — arkhitektury.
-
-Если patch содержит только `3/4/5`, GT в binary mode остаётся пустым.
-
----
-
-### Реализованный Pipeline
+## Pipeline
 
 ```text
 02_unet_segmentation/
-├── datasets/
-├── models/
-├── losses/
-├── scripts/
-├── utils/
-├── assets/readme/
-├── runs/
-└── notebooks/
+├── datasets/        # dataset loading and binary/multiclass mapping
+├── models/          # UNetSmall
+├── losses/          # BCE, Dice and combined losses
+├── scripts/         # training, evaluation and threshold sweep
+├── utils/           # metrics and visualization
+├── assets/readme/   # curated README figures
+├── runs/            # local experiment outputs
+└── notebooks/       # exploratory notebooks
 ```
 
-Поддерживаются:
+Модуль поддерживает:
 
-- region-aware split;
+- filtering by modality;
+- binary and multiclass training modes;
 - custom validation regions;
-- modality filtering;
-- multiclass/binary modes;
-- BCE / Dice / BCE+Dice;
-- threshold sweep;
-- Kaggle experiments runner;
-- automatic evaluation;
-- prediction visualization.
+- BCE / Dice / BCE + Dice losses;
+- threshold sweep after training;
+- visualization of predictions and failure cases.
 
-## Best Result
+## Experiment Summary
 
-| Metric | Value |
-|---|---|
-| Task | Binary Kurgan Segmentation |
-| Modality | LiDAR |
-| Model | UNetSmall |
-| Image Size | 256 |
-| Loss | BCE |
-| Threshold | 0.60 |
-| fg_iou | **0.6789** |
+Основная серия экспериментов проверяла, что именно дает наибольший вклад в качество baseline.
 
----
+| Experiment | Task | Modalities | Loss | Image size | Best metric |
+|---|---|---|---|---:|---:|
+| `baseline_all_modalities` | multiclass | `Li`, `Ae`, `SpOr` | CE + Dice | 256 | mean fg IoU = 0.137 |
+| `li_only` | multiclass | `Li` | CE + Dice | 256 | mean fg IoU = 0.243 |
+| `binary_li_only` | binary | `Li` | BCE + Dice | 256 | fg IoU = 0.647 |
+| `binary_li_no_dice` | binary | `Li` | BCE | 256 | fg IoU = 0.665 |
+| `binary_li_no_dice` + threshold sweep | binary | `Li` | BCE | 256 | **fg IoU = 0.6789** |
+| `binary_li_512_no_dice` | binary | `Li` | BCE | 512 | fg IoU = 0.630 |
 
-# Results
+## Key Findings
 
-| Experiment | Task | Modalities | Size | Loss | Best IoU |
-|---|---|---|---:|---|---:|
-| baseline_all_modalities | Multiclass | Li+Ae+SpOr | 256 | CE + Dice | 0.137 |
-| li_only | Multiclass | Li | 256 | CE + Dice | 0.243 |
-| binary_li_only | Binary | Li | 256 | BCE + Dice | 0.647 |
-| binary_li_no_dice | Binary | Li | 256 | BCE | 0.665 |
-| binary_li_no_dice + threshold sweep | Binary | Li | 256 | BCE | **0.679** |
-| binary_li_512_no_dice | Binary | Li | 512 | BCE | 0.630 |
+- `Li` оказался самой информативной модальностью для выделения курганов.
+- Binary formulation заметно стабильнее multiclass formulation для легкой U-Net.
+- BCE-only оказался лучше BCE + Dice в binary mode.
+- Threshold calibration улучшила результат без повторного обучения модели.
+- Увеличение image size с `256` до `512` ухудшило качество для `UNetSmall`.
+- Другие археологические структуры работают как важные hard negatives.
 
----
+Модальность оказалась не второстепенной настройкой, а главным источником качества:
 
-# Key Findings
-
-- LiDAR значительно превосходит Ae и SpOr.
-- Binary segmentation стабильнее multiclass formulation.
-- BCE-only неожиданно оказался лучше BCE + Dice в binary mode.
-- Увеличение image size с 256 до 512 ухудшило качество.
-- Threshold calibration улучшила IoU с 0.665 до 0.679 без переобучения.
-- Другие археологические структуры (`3/4/5`) выступают hard negatives для binary kurgan segmentation.
-
----
-
-# Visual Results
-
-## Binary LiDAR Predictions
-
-![Binary Predictions](assets/readme/binary_li_shumgora_examples.png)
-
-*Good, medium and failure cases selected from validation predictions.*
-
----
-
-## Failure Cases
-
-![Failure Cases](assets/readme/failure_cases_binary_li.png)
-
-*Типичные ошибки: noisy terrain, merged objects, tiny kurgans, а также hard negatives — другие археологические структуры, визуально похожие на курганы.*
-
----
-
-## Threshold Sweep
-
-![Threshold Sweep](assets/readme/threshold_sweep_binary_li_no_dice.png)
-
-*Threshold calibration позволила улучшить IoU без переобучения модели.*
-
-![Failure Cases after Threshold Sweep](assets/readme/prediction_examples_thr_best.png)
-
----
-
-# Multiclass Experiments
-
-## Baseline All Modalities
-
-```text
-val_mean_fg_iou = 0.137
-```
-
-Модель находила foreground, но плохо различала классы:
-
-| Metric | Value |
-|---|---|
-| val_fg_iou | 0.2989 |
-| whole_kurgan IoU | 0.052 |
-| damaged_kurgan IoU | 0.187 |
-
-Модель переобучалась:
-
-- train loss падал с `1.4365 -> 0.5713`;
-- val loss рос до `2.5–2.8`.
-
-Лучший checkpoint:
-
-- epoch 14;
-- `val_mean_fg_iou = 0.137`.
-
----
-
-## LiDAR оказался главным источником сигнала
-
-| Experiment | mean_fg_iou |
-|---|---|
+| Experiment | mean fg IoU |
+|---|---:|
 | all modalities | 0.137 |
 | Li only | **0.243** |
-| Li + Ae | 0.148 |
 | Ae only | 0.057 |
 | SpOr only | 0.051 |
 
-Главный вывод:
+Этот результат стал одним из оснований для дальнейшего фокуса на LiDAR morphology в baseline и для отдельной проверки мультимодальности в DeepLabV3+.
 
-> LiDAR morphology содержит основной сигнал для archaeological mound segmentation.
+## Best Result
 
+Лучший результат был получен для LiDAR-only binary segmentation.
 
-## Multiclass LiDAR Predictions
+| Component | Value |
+|---|---|
+| Model | `UNetSmall` |
+| Task | Binary kurgan segmentation |
+| Modality | `Li` |
+| Image size | `256` |
+| Loss | BCE |
+| Threshold | `0.60` |
+| Foreground IoU | **0.6789** |
 
-![Multiclass Predictions](assets/readme/multiclass_li_examples.png)
-
-*Multiclass segmentation частично различает whole/damaged курганы, но страдает от сильного смешения классов и foreground overprediction по сравнению с binary formulation.*
-
----
-
-## Почему Ae и SpOr деградировали качество
-
-### Ae
+Threshold tuning дал прирост без retraining:
 
 ```text
-val_mean_fg_iou = 0.0567
+fg IoU: 0.6651 -> 0.6789
 ```
 
-Причины:
+## Visual Results
 
-- нестабильные текстуры;
-- слабый рельеф;
-- курганы слишком малы;
-- сильный domain shift между регионами.
+### Binary LiDAR Predictions
 
----
+![Binary predictions](assets/readme/binary_li_shumgora_examples.png)
 
-### SpOr
+Примеры показывают good, medium и failure cases на validation patches.
 
-```text
-val_mean_fg_iou = 0.0508
-```
+### Threshold Sweep
 
-Причины:
+![Threshold sweep](assets/readme/threshold_sweep_binary_li_no_dice.png)
 
-- низкое spatial resolution;
-- morphology курганов теряется.
-
----
-
-## Dice помогал в multiclass режиме
-
-| Experiment | mean_fg_iou |
-|---|---|
-| CE + Dice | 0.137 |
-| BCE only | 0.116 |
-
-Dice действительно помогал small-object multiclass segmentation.
-
----
-
-## Lower damaged weight улучшил баланс
-
-| Experiment | whole_iou | damaged_iou |
-|---|---:|---:|
-| baseline | 0.052 | 0.187 |
-| lower_damaged_weight | 0.131 | 0.133 |
-
-Модель стала меньше перекошена в damaged class.
-
----
-
-# Binary Experiments
-
-Binary formulation резко улучшила качество.
-
----
-
-## Лучший Binary Baseline
-
-| Experiment | fg_iou |
-|---|---|
-| binary_li_no_dice | **0.6651** |
-| binary_li_pos_weight_4 | 0.6620 |
-| binary_li_pos_weight_2 | 0.6616 |
-| binary_li_only | 0.6472 |
-
-Главный вывод:
-
-> Binary LiDAR segmentation оказалась значительно стабильнее multiclass segmentation.
-
-![Binary models comparison](assets/readme/binary_models_shumgora_comparison.png)
-
----
-
-## Dice не дает стабильного прироста
-
-| Experiment | fg_iou |
-|---|---|
-| with Dice | 0.6472 |
-| no Dice | **0.6651** |
-
-Очень важный scientific insight.
-
-Вероятные причины:
-
-- binary task уже достаточно стабильна;
-- BCE лучше оптимизирует границы;
-- Dice переусредняет крупные объекты.
-
----
-
-## Pos Weight почти ничего не дал
-
-| pos_weight | fg_iou |
-|---|---|
-| 1 | 0.647 |
-| 2 | 0.662 |
-| 4 | 0.662 |
-
-Foreground imbalance перестал быть главным bottleneck.
-
----
-
-## Ae значительно ухудшает качество segmentation
-
-| Experiment | fg_iou |
-|---|---|
-| binary_li_only | 0.665 |
-| binary_li_ae_only | 0.396 |
-
-Это почти напрямую показывает:
-
-> Ae domain сильно отличается от LiDAR morphology.
-
----
-
-## SpOr показал ограниченную пригодность для текущей постановки задачи.
-
-```text
-SpOr_fg_iou = 0.103
-```
-
-Практически unusable для текущей постановки.
-
----
-
-# Image Size Experiments
-
-## 512 unexpectedly underperformed
-
-| Experiment | fg_iou |
-|---|---|
-| 256 no_dice | **0.6789** |
-| 512 no_dice | 0.6298 |
-
-Дополнительные эксперименты:
-
-| Experiment | fg_iou |
-|---|---|
-| binary_li_512_no_dice | 0.6260 |
-| binary_li_512_pos_weight_2 | 0.6153 |
-| binary_li_512_ce_dice | 0.6079 |
-
----
-
-## Почему 512 хуже
-
-### 1. Patch context важнее detail
-
-При 512:
-
-- объект становится слишком маленьким относительно patch;
-- foreground signal размывается.
-
-### 2. UNetSmall не хватает capacity
-
-512 требует:
-
-- большего receptive field;
-- более сильного encoder;
-- richer feature hierarchy.
-
----
-
-## Dice снова проигрывает
-
-| Experiment | fg_iou |
-|---|---|
-| 512 no dice | 0.626 |
-| 512 ce+dice | 0.608 |
-
-Теперь это становится стабильным паттерном.
-
----
-
-# Threshold Sweep
-
-После обучения моделей был проведён threshold sweep:
-
-```text
-thresholds = 0.05 ... 0.95
-```
-
-Для каждого threshold вычислялись:
-
-- fg_iou;
-- fg_dice;
-- precision;
-- recall;
-- pixel accuracy.
-
----
-
-## Лучший результат проекта
-
-| Model | Threshold | fg_iou |
-|---|---|---|
-| binary_li_no_dice | **0.60** | **0.6789** |
-
-Threshold tuning дал почти бесплатный improvement:
-
-```text
-0.6651 -> 0.6789
-```
-
----
-
-## Calibration Insight
-
-Оптимальный threshold оказался ВЫШЕ 0.5:
-
-| Model | Best threshold |
-|---|---|
-| binary_li_no_dice | 0.60 |
-| binary_li_pos_weight_2 | 0.55 |
-| binary_li_pos_weight_4 | 0.55 |
-| binary_li_only | 0.75 |
-
-Это означает:
-
-> модель склонна пере-предсказывать archaeological morphology, что повышает recall, но создаёт false positives на hard negatives.
-
----
-
-## Precision / Recall Tradeoff
+Оптимальный threshold оказался выше стандартного `0.5`:
 
 | Threshold | Precision | Recall |
-|---|---|---|
+|---:|---:|---:|
 | 0.50 | 0.708 | 0.909 |
 | 0.60 | 0.747 | 0.882 |
 | 0.75 | 0.803 | 0.797 |
 
+Это показывает, что модель склонна пере-предсказывать археологический foreground: повышение threshold уменьшает false positives и улучшает итоговый IoU.
 
-Threshold > 0.5 эффективно чистит false positives.
+### Failure Cases
 
----
+![Failure cases](assets/readme/failure_cases_binary_li.png)
 
-# Главный Scientific Result
+Типичные ошибки связаны с noisy terrain, merged objects, tiny kurgans и hard negatives, визуально похожими на курганы.
 
-## Лучший pipeline проекта
+## Interpretation
 
-```text
-UNetSmall
-Binary segmentation
-LiDAR only
-256x256
-BCE only
-threshold = 0.60
-fg_iou = 0.6789
-```
+Этот baseline показал, что главная сложность задачи не только в архитектуре модели.
 
----
+Качество сильно зависит от постановки:
 
-# Project Structure
+- multiclass segmentation на маленькой U-Net нестабильна;
+- LiDAR дает наиболее читаемую морфологию;
+- визуальные модальности могут добавлять domain noise;
+- loss function и threshold calibration существенно влияют на результат;
+- hard negatives нужны для реалистичной оценки.
 
-```text
-02_unet_segmentation/
-├── datasets/
-├── models/
-├── losses/
-├── scripts/
-├── utils/
-├── notebooks/
-├── assets/readme/
-├── runs/
-└── archive/
-```
+Именно эти выводы определили следующий шаг проекта: перейти к более сильной архитектуре DeepLabV3+ и полноценной multiclass object-level evaluation.
 
----
+## Reproducibility
 
-# Training
-
-## Binary LiDAR Baseline
+### Training
 
 ```bash
 python scripts/train.py \
@@ -566,9 +197,7 @@ python scripts/train.py \
   --dice-weight 0.0
 ```
 
----
-
-# Threshold Sweep Usage
+### Threshold Sweep
 
 ```bash
 python scripts/threshold_sweep.py \
@@ -583,84 +212,25 @@ python scripts/threshold_sweep.py \
   --binary-positive-classes "1,2"
 ```
 
----
+## Role In The Full Project
 
-# Kaggle
-
-Эксперименты запускались на Kaggle GPU (`Tesla T4`).
-
-## Train
-
-```bash
-bash run_kaggle_experiments.sh
-```
-
-## Threshold Sweeps
-
-```bash
-bash run_kaggle_experiments.sh threshold_sweeps
-```
-
----
-
-# Repository Hygiene
-
-В git intentionally НЕ хранятся:
-
-- `history.csv`
-- `train_split.csv`
-- `val_split.csv`
-- `logs/`
-- `smoke_test/`
-- `__pycache__/`
-
-README использует curated visual assets из:
+Этот модуль является baseline-ступенью всей серии:
 
 ```text
-assets/readme/
+Geodata preprocessing
+        ↓
+Binary U-Net segmentation baseline
+        ↓
+Multiclass DeepLabV3+ research
+        ↓
+YOLO-ready detection dataset
 ```
 
----
+Главный вклад модуля — доказать, что LiDAR morphology действительно содержит сильный сигнал для археологической сегментации, а также зафиксировать baseline:
 
-# Future Work
+```text
+UNetSmall + Li + binary segmentation + BCE + threshold 0.60
+fg IoU = 0.6789
+```
 
-Следующий этап проекта:
-
-- DeepLabV3+
-- более сильные encoder’ы;
-- comparison against UNet baseline;
-- explicit archaeological multi-class segmentation;
-- region-aware curriculum;
-- candidate extraction + damage classification.
-
----
-
-# Основные ML-инсайты
-
-- LiDAR значительно превосходит Ae и SpOr;
-- multiclass segmentation нестабильна на heterogeneous domains;
-- binary formulation резко улучшает качество;
-- Dice полезен в multiclass, но вреден в binary;
-- threshold tuning даёт measurable gain;
-- larger input size не всегда улучшает segmentation;
-- calibration иногда важнее смены архитектуры;
-- archaeological hard negatives — важная часть задачи.
-
----
-
-# Ключевые технологии
-
-- Python
-- PyTorch
-- NumPy
-- Pandas
-- Rasterio
-- GeoPandas
-- Matplotlib
-- Kaggle
-- Semantic Segmentation
-- U-Net
-- BCEWithLogitsLoss
-- Dice Loss
-- Threshold Calibration
-- Archaeological LiDAR Analysis
+Дальнейшее развитие этой линии выполнено в `03_multiclass_segmentation_deeplab`, где задача расширена до пяти foreground-классов, region-aware benchmark split и object-level evaluation.
