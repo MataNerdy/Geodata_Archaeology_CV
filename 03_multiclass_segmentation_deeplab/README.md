@@ -13,7 +13,7 @@
 - насколько результат зависит от seed,
 - можно ли улучшить извлечение объектов без повторного обучения нейросети.
 
-![Model evolution on the same validation samples](assets/readme/model_evolution_examples.png)
+![Representative predictions](assets/predictions/final_resnet34_all_seed_101.png)
 
 Финальная версия проекта — DeepLabV3+ с ResNet34 encoder, модальностями `Li`, `Ae`, `SpOr` и Stage C postprocessing. Подробная конфигурация pipeline и финальные метрики вынесены в отдельные разделы ниже, чтобы не смешивать выбор модели с оценкой результата.
 
