@@ -27,7 +27,7 @@ runs/**/history.csv
 .env
 .DS_Store
 
-02_unet_segmentation/archive/README_legacy_full.md
+02_unet_segmentation/archive/
 encoder_modality_ablation.md
 PORTFOLIO_CLEANUP.md
 sampler_ablation.md
