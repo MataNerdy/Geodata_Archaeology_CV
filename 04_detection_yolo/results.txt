@@ -1,0 +1,115 @@
+Developed an object detection pipeline for archaeological mound detection using LiDAR and aerial imagery.
+
+Constructed a filtered dataset (v2) by:
+- restricting to two target classes (kurgans)
+- selecting LiDAR and aerial modalities
+- removing noisy and irrelevant samples
+
+Trained a YOLOv8 detector achieving:
+- mAP50 ≈ 0.18
+- recall ≈ 0.23
+- higher performance on well-defined objects (kurgany_tselye)
+
+Key findings:
+- model exhibits conservative behavior (higher precision, lower recall)
+- detection of small and low-contrast objects remains challenging
+- LiDAR data provides stronger structural signal than aerial imagery
+
+images: 635
+positive: 368
+negative: 267
+
+bbox:
+kurgany_povrezhdennye: 3275
+kurgany_tselye: 1013
+
+modalities:
+Li / Ae
+
+split:
+train / val (region-based)
+
+Dataset is highly challenging due to:
+- small object size
+- low contrast (especially in aerial imagery)
+- heterogeneous modalities (LiDAR vs aerial)
+- dense object clusters
+- edge truncation in tiled data
+
+Initial dataset (v1) included 5 classes and multiple modalities,
+which resulted in unstable training and poor performance due to high noise and class imbalance.
+
+To stabilize training, a filtered dataset (v2) was constructed:
+- restricted to 2 classes (kurgans only)
+- restricted to LiDAR and aerial imagery
+- removed low-quality tiles
+- reduced noise and irrelevant classes
+
+mAP50 = 0.182
+recall ≈ 0.23
+precision ≈ 0.32
+
+→ модель работает
+→ но пропускает объекты
+→ лучше на tselye, хуже на povrezhdennye
+
+kurgany_tselye: 0.286
+kurgany_povrezhdennye: 0.078
+модель гораздо лучше ловит "целые" курганы (целые = более выраженная форма),
+чем повреждённые (повреждённые = слабый сигнал + шум)
+
+best F1 ≈ 0.24 при conf ≈ 0.15
+оптимальный threshold низкий (≈0.15)
+модель неуверенная → нужен низкий порог
+
+✔ много background → true negative
+много FN (пропуски)
+путаница между классами
+kurgany_povrezhdennye часто уходит в background
+
+1. Model shows moderate precision but low recall
+   → conservative detection behavior
+
+2. LiDAR data provides strong structural signal
+   → better detection quality than aerial imagery
+
+3. Detection quality сильно зависит от типа объекта:
+   - kurgany_tselye → хорошо
+   - kurgany_povrezhdennye → плохо
+
+4. Small and low-contrast objects are the main failure mode
+
+5. Dense clusters lead to:
+   - duplicate detections
+   - localization instability
+
+Limitations:
+
+- small dataset (≈600 images)
+- class imbalance (3275 vs 1013 bbox)
+- many negative tiles
+- edge truncation due to tiling
+- heterogeneous modalities
+
+Future work:
+
+- increase recall via dataset balancing
+- reduce negative samples
+- remove edge-truncated objects
+- try larger model (YOLOv8m)
+- experiment with segmentation approach
+- multi-scale training
+
+Dataset cleaning improved prediction confidence (precision),
+but reduced recall due to removal of difficult samples.
+
+This demonstrates that aggressive filtering harms generalization
+in small-object detection tasks.
+
+We conducted a dataset cleaning experiment to reduce noise.
+
+While filtering improved precision, it significantly reduced recall,
+especially for difficult samples such as partially damaged mounds.
+
+This indicates that preserving challenging examples is critical
+for robust detection performance in real-world remote sensing data.

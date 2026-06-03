@@ -1,0 +1,155 @@
+Developed object detection pipeline for archaeological structures (kurgans) using YOLOv8 on multimodal remote sensing data (LiDAR + aerial imagery).
+
+• Built custom dataset pipeline from geospatial data (raster + polygons → bounding boxes)
+• Performed iterative dataset refinement (noise filtering, class balancing)
+• Improved minority class detection (mAP50: 0.07 → 0.15)
+• Achieved overall mAP50 ≈ 0.20 on a highly challenging small-object detection task
+• Analyzed precision–recall trade-offs and model behavior via PR/F1 curves
+
+Задача
+
+Детекция курганов (kurgans detection)
+
+Модальности: LiDAR + Aerial (Li + Ae)
+
+Классы:
+    - kurgany_tselye
+    - kurgany_povrezhdennye
+
+Модель: YOLOv8 (detect)
+
+Данные
+
+v2 (baseline)
+
+    images: 635
+    boxes: 4288
+
+    проблемы:
+    - много шумных bbox
+    - дисбаланс классов
+    - переобучение на легкие патчи
+
+    recall высокий
+    precision низкий
+
+v3 (clean)
+
+    images: 313
+    boxes: 539
+
+    Фильтры:
+
+    - частичная фильтрация edge-объектов
+    - MIN_VALID_FRACTION
+    - MIN_CONTRAST
+    - ограничение плотных тайлов (MAX_OBJECTS)
+    - downsampling negative
+
+    precision вырос
+    recall упал
+
+v4 (balance)
+
+    images: 347
+    boxes: 772
+
+    баланс:
+    povrezhdennye: 430
+    tselye:        342
+
+Модель
+
+    YOLOv8s
+    imgsz = 1024
+    epochs = 80 (early stop v3 ~71)
+
+Результаты
+    v2:
+        mAP50 = 0.182
+        precision ≈ 0.32
+        recall ≈ 0.23
+
+    v3:
+        mAP50 ≈ 0.17
+        precision ≈ 0.455
+        recall ≈ 0.162
+
+    v4:
+        mAP50:     0.198
+        precision: 0.478
+        recall:    0.195
+
+По классам
+    kurgany_tselye:
+    mAP50: 0.246
+    recall: 0.25
+
+    kurgany_povrezhdennye:
+    mAP50: 0.151   (было ~0.07)
+    recall: 0.14
+
+Ключевые наблюдения
+
+1. Основной прирост качества достигнут не архитектурой,
+а переработкой датасета
+
+2. Чистка данных увеличивает precision
+но ухудшает recall
+
+3. v2 → high recall, low precision
+v4 → balanced precision, lower recall
+
+4. модель лучше учится на чистых данных, чем на больших
+
+5. Основная сложность задачи:
+    - маленькие объекты
+    - низкий контраст
+    - частично разрушенные структуры
+
+6. Модель начала различать классы, а не просто находить "что-то"
+
+Главный вывод
+    Aggressive dataset cleaning improved precisionbut reduced recall due to removal of difficult samples.Preserving challenging examples is criticalfor small-object detection in remote sensing.
+
+Ограничения
+    - маленький val (особенно Ae)
+    - дисбаланс классов
+    - сильная зависимость от качества тайлинга
+    - много edge-объектов
+
+Что дальше
+    - v2 (recall) + v4 (precision)
+    - усиление povrezhdennye
+    - увеличение данных
+    - Multi-scale / tiling улучшение
+
+Уже есть
+    ✔ dataset engineering
+    ✔ экспериментальный дизайн
+    ✔ анализ поведения модели
+    ✔ причинно-следственные выводы
+
+v2 — baseline: выше recall, слабее повреждённые
+v3 — over-cleaning: precision ↑, recall ↓
+v4 — balanced: лучший damaged-class AP
+v5 — threshold tuning: не помог
+
+threshold tuning не поднял recall.
+Боттлнек не в confidence threshold, а в данных / разметке / сложности объекта.
+
+v4 как наиболее сбалансированный:
+mAP50 ≈ 0.198
+precision ≈ 0.478
+recall ≈ 0.195
+povrezhdennye AP ≈ 0.151
+
+v5 conf=0.10:
+mAP50 ≈ 0.187
+R ≈ 0.195
+povrezhdennye AP ≈ 0.130
+
+v5 conf=0.15:
+mAP50 ≈ 0.178
+R ≈ 0.195
+povrezhdennye AP ≈ 0.111
