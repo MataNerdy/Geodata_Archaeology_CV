@@ -185,13 +185,33 @@ v4 стал наиболее сбалансированной версией dat
 
 Основная серия экспериментов проверяла, что сильнее влияет на качество: размер модели, очистка данных, балансировка классов или confidence threshold.
 
-| Version | Dataset idea | Model | Key filters | Metrics | Main conclusion |
-|---|---|---|---|---|---|
-| v1 | Initial 5-class multimodal dataset | TODO: confirm from original run | Все target-классы, более широкий набор модальностей | TODO: recover metrics if needed | Dataset оказался слишком шумным и несбалансированным для стабильного обучения. |
-| v2 | Kurgan-only Li + Ae baseline | YOLOv8n | Classes 0/1, `Li`/`Ae`, negative ratio 0.25 | mAP50 ≈ 0.182; precision ≈ 0.32; recall ≈ 0.23; AP `tselye` ≈ 0.286; AP `povrezhdennye` ≈ 0.078 | Модель работает, но ведет себя консервативно и часто пропускает объекты, особенно поврежденные курганы. |
-| v3 | Cleaner dataset | YOLOv8s | Edge/object quality filtering, `MIN_VALID_FRACTION`, `MIN_CONTRAST`, `MAX_OBJECTS`, negative downsampling | mAP50 ≈ 0.17; precision ≈ 0.455; recall ≈ 0.162 | Чистка повысила precision, но удалила сложные примеры и снизила recall. |
-| v4 | Balanced clean dataset | YOLOv8s | `Li`/`Ae`, kurgan-only, edge-ratio filter, `MIN_VALID_FRACTION = 0.25`, `MIN_CONTRAST = 3`, `MAX_OBJECTS = 20`, negative ratio 0.15 | mAP50 ≈ 0.198; precision ≈ 0.478; recall ≈ 0.195; AP `tselye` ≈ 0.246; AP `povrezhdennye` ≈ 0.151 | Наиболее сбалансированный вариант; AP поврежденных курганов заметно вырос. |
-| v5 | Confidence threshold tuning | YOLOv8s / v4 dataset | Validation with lower confidence thresholds: 0.10 and 0.15 | conf 0.10: mAP50 ≈ 0.187, recall ≈ 0.195, AP `povrezhdennye` ≈ 0.130; conf 0.15: mAP50 ≈ 0.178, recall ≈ 0.195, AP `povrezhdennye` ≈ 0.111 | Threshold tuning не поднял recall; bottleneck находится в данных, разметке и сложности объектов. |
+### Дизайн экспериментов
+
+| Version | Цель | Dataset | Model | Основное изменение |
+|---|---|---|---|---|
+| v1 | Проверить исходный bbox dataset | 5 классов, несколько модальностей | TODO: confirm | Baseline на полном шумном dataset |
+| v2 | Получить рабочий kurgan-only baseline | `Li` + `Ae`, 2 класса | YOLOv8n | Удалены не-kurgan классы, negative ratio `0.25` |
+| v3 | Проверить эффект агрессивной чистки | Clean `Li` + `Ae`, 2 класса | YOLOv8s | Edge/object quality filters, contrast filters, dense-tile limit |
+| v4 | Сбалансировать качество и class balance | Balanced clean `Li` + `Ae`, 2 класса | YOLOv8s | Negative ratio `0.15`, class balancing, мягче сохранены сложные примеры |
+| v5 | Проверить, можно ли поднять recall через threshold tuning | v4-style dataset | YOLOv8s | Validation при confidence `0.10` и `0.15` |
+
+### Summary metrics
+
+| Version | mAP50 | Precision | Recall | AP `tselye` | AP `povrezhdennye` | Вывод |
+|---|---:|---:|---:|---:|---:|---|
+| v1 | TODO | TODO | TODO | TODO | TODO | Исходный dataset оказался слишком шумным и несбалансированным. |
+| v2 | ≈ 0.182 | ≈ 0.32 | ≈ 0.23 | ≈ 0.286 | ≈ 0.078 | Модель работает, но часто пропускает поврежденные курганы. |
+| v3 | ≈ 0.17 | ≈ 0.455 | ≈ 0.162 | TODO | TODO | Чистка повысила precision, но снизила recall. |
+| v4 | ≈ 0.198 | ≈ 0.478 | ≈ 0.195 | ≈ 0.246 | ≈ 0.151 | Наиболее сбалансированный вариант; damaged-class AP вырос. |
+
+### Threshold tuning
+
+| Version | Confidence | mAP50 | Recall | AP `povrezhdennye` | Вывод |
+|---|---:|---:|---:|---:|---|
+| v5 | 0.10 | ≈ 0.187 | ≈ 0.195 | ≈ 0.130 | Recall не вырос относительно v4. |
+| v5 | 0.15 | ≈ 0.178 | ≈ 0.195 | ≈ 0.111 | Повышение threshold ухудшило mAP50 и damaged-class AP. |
+
+Главный вывод серии: bottleneck находится не в confidence threshold, а в данных, разметке и сложности damaged-object morphology.
 
 Сохраненные локальные YOLO artifacts находятся в `runs/runs_2` и `runs/runs_4`.
 
@@ -449,5 +469,3 @@ YOLOv8 работает как detector,
 small objects, damaged morphology, class imbalance,
 negative sampling and tile-level noise.
 ```
-
-Поэтому следующий шаг проекта - не просто обучить более крупную модель, а сделать воспроизводимый detection dataset pipeline с curated examples, стабильными configs и понятным visual report.
