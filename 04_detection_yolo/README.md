@@ -202,7 +202,7 @@ v4 стал наиболее сбалансированной версией dat
 | v1 | TODO | TODO | TODO | TODO | TODO | Исходный dataset оказался слишком шумным и несбалансированным. |
 | v2 | ≈ 0.182 | ≈ 0.32 | ≈ 0.23 | ≈ 0.286 | ≈ 0.078 | Модель работает, но часто пропускает поврежденные курганы. |
 | v3 | ≈ 0.17 | ≈ 0.455 | ≈ 0.162 | TODO | TODO | Чистка повысила precision, но снизила recall. |
-| v4 | ≈ 0.198 | ≈ 0.478 | ≈ 0.195 | ≈ 0.246 | ≈ 0.151 | Наиболее сбалансированный вариант; damaged-class AP вырос. |
+| v4 | 0.21359 | 0.48504 | 0.20424 | 0.278 | 0.148 | Наиболее сбалансированный вариант; `tselye` легче, damaged-class остается bottleneck. |
 
 ### Threshold tuning
 
@@ -213,16 +213,29 @@ v4 стал наиболее сбалансированной версией dat
 
 Главный вывод серии: bottleneck находится не в confidence threshold, а в данных, разметке и сложности damaged-object morphology.
 
-Сохраненные локальные YOLO artifacts находятся в `runs/runs_2` и `runs/runs_4`.
+Основной v4 run сохранен как Colab archive:
 
-Лучшие строки из локальных `results.csv`:
+```text
+runs/yolo_kurgan_detection_v4_kurgans_li_ae_v4_yolov8s_balanced_colab_20260605_131149/
+```
+
+Лучшие строки из `results.csv`:
 
 | Run | Epoch | Precision | Recall | mAP50 | mAP50-95 |
 |---|---:|---:|---:|---:|---:|
 | `runs_2` | 51 | 0.43985 | 0.18478 | 0.18323 | 0.12095 |
-| `runs_4` | 52 | 0.54479 | 0.18838 | 0.22443 | 0.12145 |
+| `v4` | 48 | 0.48504 | 0.20424 | 0.21359 | 0.12590 |
 
-Эти значения могут отличаться от ручных summary-метрик, потому что в разных местах фиксировались best epoch, final epoch или отдельная threshold-specific validation.
+Для v4 также полезно зафиксировать крайние точки обучения:
+
+| Selection | Epoch | Precision | Recall | mAP50 | mAP50-95 | Интерпретация |
+|---|---:|---:|---:|---:|---:|---|
+| Last epoch | 73 | 0.31420 | 0.18134 | 0.15278 | 0.08118 | После best epoch качество просело. |
+| Best mAP50 | 48 | 0.48504 | 0.20424 | 0.21359 | 0.12590 | Основной checkpoint для анализа: `best.pt`. |
+| Best recall | 55 | 0.27045 | 0.21655 | 0.14643 | 0.08409 | Recall можно поднять, но ценой mAP и precision. |
+| Best precision | 49 | 0.97202 | 0.12500 | 0.18717 | 0.11390 | Очень консервативный режим модели. |
+
+Предыдущий локальный `runs_4` остается legacy artifact для сравнения, но основной v4 result в README теперь соответствует воспроизводимому Colab-run и checkpoint `best.pt`.
 
 ## Результаты
 
@@ -235,10 +248,15 @@ YOLOv8s + cleaned balanced Li/Ae kurgan dataset
 Ключевой результат:
 
 ```text
-mAP50 ≈ 0.198
-precision ≈ 0.478
-recall ≈ 0.195
-AP kurgany_povrezhdennye ≈ 0.151
+v4 best.pt, epoch 48
+
+mAP50 = 0.21359
+mAP50-95 = 0.12590
+precision = 0.48504
+recall = 0.20424
+
+AP kurgany_tselye = 0.278
+AP kurgany_povrezhdennye = 0.148
 ```
 
 По сравнению с v2, качество damaged-class detection улучшилось:
@@ -248,6 +266,8 @@ kurgany_povrezhdennye AP: ~0.07-0.08 -> ~0.15
 ```
 
 При этом задача остается recall-limited: модель лучше находит хорошо выраженные целые курганы и часто отправляет поврежденные объекты в background.
+
+Confusion matrix подтверждает этот вывод: значительная часть объектов уходит в `background`, особенно для `kurgany_povrezhdennye`. Normalized confusion matrix показывает, что поврежденный класс распознается хуже и остается главным ограничением качества.
 
 ## Key Findings
 
@@ -272,14 +292,14 @@ runs/runs_2/
 ├── confusion_matrix.png
 └── val_batch*_labels/pred.jpg
 
-runs/runs_4/
-├── results.png
-├── BoxF1_curve.png
-├── BoxP_curve.png
-├── BoxR_curve.png
-├── confusion_matrix.png
-├── confusion_matrix_normalized.png
-└── val_batch*_labels/pred.jpg
+runs/yolo_kurgan_detection_v4_kurgans_li_ae_v4_yolov8s_balanced_colab_20260605_131149/
+├── kurgans_li_ae_v4_yolov8s_balanced_colab/
+│   ├── results.png
+│   ├── BoxPR_curve.png
+│   ├── confusion_matrix_normalized.png
+│   ├── val_batch*_labels/pred.jpg
+│   └── weights/best.pt
+└── kurgans_li_ae_v4_yolov8s_balanced_colab_val_conf_*/
 ```
 
 Для GitHub README лучше подготовить curated figures в `reports/figures/`, а не коммитить полные `runs/`.
@@ -341,6 +361,12 @@ app/streamlit_app.py
 
 ```bash
 notebooks/geo_li_ae_kurgan_detection.ipynb
+```
+
+Воспроизводимый Colab notebook для обучения из GitHub и сохранения результатов обратно на Google Drive:
+
+```bash
+notebooks/colab_yolo_train_from_github_drive.ipynb
 ```
 
 Существующие script prototypes:
