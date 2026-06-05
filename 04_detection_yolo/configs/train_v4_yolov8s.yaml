@@ -1,0 +1,13 @@
+model: yolov8s.pt
+data: ../datasets/dataset_yolo_bbox_v4_kurgans_li_ae_balanced/dataset.yaml
+imgsz: 1024
+epochs: 80
+batch: 8
+patience: 25
+cos_lr: true
+workers: 2
+cache: true
+close_mosaic: 15
+project: runs/detect
+name: kurgans_li_ae_v4_yolov8s_balanced
+exist_ok: true

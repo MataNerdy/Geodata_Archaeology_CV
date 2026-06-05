@@ -1,0 +1,10 @@
+ultralytics
+pandas
+numpy
+pyyaml
+pillow
+matplotlib
+streamlit
+geopandas
+rasterio
+shapely

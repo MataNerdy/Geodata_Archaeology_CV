@@ -1,0 +1,7 @@
+variant: v2
+input_dir: ../datasets/dataset_yolo_bbox
+output_dir: ../datasets/dataset_yolo_bbox_v2_kurgans_li_ae
+modalities: [Li, Ae]
+negative_ratio: 0.25
+random_seed: 42
+overwrite: false

@@ -369,13 +369,28 @@ notebooks/geo_li_ae_kurgan_detection.ipynb
 notebooks/colab_yolo_train_from_github_drive.ipynb
 ```
 
-Существующие script prototypes:
+Новые воспроизводимые entrypoints:
 
 ```bash
-python skripts/build_yolo_dataset_bbox.py
-python skripts/make_dataset_v2_kurgans_li_ae.py
-streamlit run skripts/visualize_yolo_labels.py
+# Build filtered datasets from the source 5-class YOLO bbox dataset
+python scripts/filter_yolo_dataset.py --config configs/dataset_v2.yaml
+python scripts/filter_yolo_dataset.py --config configs/dataset_v4.yaml
+
+# Train YOLO models
+python scripts/train_yolo.py --config configs/train_v2_yolov8n.yaml
+python scripts/train_yolo.py --config configs/train_v4_yolov8s.yaml
+
+# Validate threshold behavior
+python scripts/validate_yolo.py --config configs/validate_thresholds_v4.yaml
+
+# Summarize an Ultralytics run
+python scripts/summarize_yolo_run.py runs/.../results.csv
+
+# Dataset QA viewer
+streamlit run app/streamlit_app.py
 ```
+
+Старые файлы в `skripts/` оставлены как exploratory prototypes и historical reference. Основная логика v2/v4 filtering теперь вынесена в `src/dataset/filter_yolo_dataset.py`.
 
 Обучение v2 в notebook:
 
@@ -406,13 +421,7 @@ streamlit run skripts/visualize_yolo_labels.py
 | `close_mosaic` | 15 |
 | Run name | `kurgans_li_ae_v4_yolov8s_balanced` |
 
-Перед полноценным воспроизведением нужно вынести hard-coded paths в configs:
-
-```text
-/content/dataset/...
-/content/drive/...
-/Volumes/Lexar/Датасет/
-```
+Colab notebook использует те же идеи, но сохраняет результаты обучения в архив на Google Drive.
 
 ## Repository Structure
 
@@ -423,8 +432,21 @@ streamlit run skripts/visualize_yolo_labels.py
 ├── README.md
 ├── requirements.txt
 ├── configs/
+│   ├── dataset_v2.yaml
+│   ├── dataset_v4.yaml
+│   ├── train_v2_yolov8n.yaml
+│   ├── train_v4_yolov8s.yaml
+│   └── validate_thresholds_v4.yaml
 ├── src/
+│   └── dataset/
+│       └── filter_yolo_dataset.py
 ├── app/
+│   └── streamlit_app.py
+├── scripts/
+│   ├── filter_yolo_dataset.py
+│   ├── train_yolo.py
+│   ├── validate_yolo.py
+│   └── summarize_yolo_run.py
 ├── notebooks/
 │   └── geo_li_ae_kurgan_detection.ipynb
 ├── reports/
@@ -433,7 +455,7 @@ streamlit run skripts/visualize_yolo_labels.py
 └── data_sample/
 ```
 
-Сейчас часть кода еще находится в experimental folder `skripts/`. Следующий refactoring step - разделить reusable source code, command-line scripts и Streamlit app.
+Папка `skripts/` пока сохранена без удаления как historical layer. Новые experiments should use `configs/`, `src/`, `scripts/` and `app/`.
 
 ## Ограничения
 

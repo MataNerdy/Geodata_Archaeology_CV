@@ -1,0 +1,4 @@
+weights: runs/yolo_kurgan_detection_v4_kurgans_li_ae_v4_yolov8s_balanced_colab_20260605_131149/kurgans_li_ae_v4_yolov8s_balanced_colab/weights/best.pt
+data: ../datasets/dataset_yolo_bbox_v4_kurgans_li_ae_balanced/dataset.yaml
+imgsz: 1024
+conf: [0.10, 0.15, 0.25]

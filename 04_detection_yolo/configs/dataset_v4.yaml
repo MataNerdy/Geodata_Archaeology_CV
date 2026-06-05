@@ -1,0 +1,11 @@
+variant: v4
+input_dir: ../datasets/dataset_yolo_bbox
+output_dir: ../datasets/dataset_yolo_bbox_v4_kurgans_li_ae_balanced
+modalities: [Li, Ae]
+negative_ratio: 0.15
+random_seed: 42
+min_valid_fraction: 0.25
+min_contrast: 3
+max_objects: 20
+edge_ratio_limit: 0.8
+overwrite: false
