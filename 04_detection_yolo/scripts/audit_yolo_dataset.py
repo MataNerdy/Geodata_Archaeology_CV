@@ -54,6 +54,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--grid-rows", type=int, default=5)
     parser.add_argument("--positive-only", action="store_true")
     parser.add_argument("--skip-label-sheets", action="store_true")
+    parser.add_argument("--modalities", nargs="+", help="Keep only selected modalities, e.g. Li.")
+    parser.add_argument(
+        "--classes",
+        nargs="+",
+        help="Keep only selected class names for object-level stats and drawn labels.",
+    )
+    parser.add_argument(
+        "--require-class-present",
+        action="store_true",
+        help="Keep only images that contain at least one selected class.",
+    )
     return parser.parse_args()
 
 
@@ -100,7 +111,7 @@ def image_level_table(meta: pd.DataFrame, data_root: Path) -> pd.DataFrame:
     return images
 
 
-def parse_label(path: Path) -> list[YoloBox]:
+def parse_label(path: Path, allowed_classes: set[int] | None = None) -> list[YoloBox]:
     boxes: list[YoloBox] = []
     if not path.exists():
         return boxes
@@ -109,12 +120,19 @@ def parse_label(path: Path) -> list[YoloBox]:
         if len(parts) != 5:
             continue
         cls_id = int(float(parts[0]))
+        if allowed_classes is not None and cls_id not in allowed_classes:
+            continue
         xc, yc, w, h = map(float, parts[1:])
         boxes.append(YoloBox(cls_id, xc, yc, w, h))
     return boxes
 
 
-def draw_labeled_thumb(image_path: Path, label_path: Path, thumb_size: int) -> Image.Image:
+def draw_labeled_thumb(
+    image_path: Path,
+    label_path: Path,
+    thumb_size: int,
+    allowed_classes: set[int] | None = None,
+) -> Image.Image:
     img = Image.open(image_path).convert("RGB")
     src_w, src_h = img.size
     img.thumbnail((thumb_size, thumb_size))
@@ -129,7 +147,7 @@ def draw_labeled_thumb(image_path: Path, label_path: Path, thumb_size: int) -> I
     draw = ImageDraw.Draw(canvas)
     font = ImageFont.load_default()
 
-    for box in parse_label(label_path):
+    for box in parse_label(label_path, allowed_classes=allowed_classes):
         x1 = (box.xc - box.w / 2) * src_w * scale_x + offset_x
         y1 = (box.yc - box.h / 2) * src_h * scale_y + offset_y
         x2 = (box.xc + box.w / 2) * src_w * scale_x + offset_x
@@ -169,6 +187,7 @@ def save_contact_sheets(
     grid_cols: int,
     grid_rows: int,
     positive_only: bool,
+    allowed_classes: set[int] | None,
 ) -> list[Path]:
     sampled = sample_rows(images, split, n=n, seed=seed, positive_only=positive_only)
     page_size = grid_cols * grid_rows
@@ -177,7 +196,12 @@ def save_contact_sheets(
     for page_idx, page in enumerate(chunks(sampled, page_size), start=1):
         sheet = Image.new("RGB", (grid_cols * thumb_size, grid_rows * thumb_size), "white")
         for cell_idx, row in enumerate(page.itertuples(index=False)):
-            thumb = draw_labeled_thumb(Path(row.image_path), Path(row.label_path), thumb_size)
+            thumb = draw_labeled_thumb(
+                Path(row.image_path),
+                Path(row.label_path),
+                thumb_size,
+                allowed_classes=allowed_classes,
+            )
             x = (cell_idx % grid_cols) * thumb_size
             y = (cell_idx // grid_cols) * thumb_size
             sheet.paste(thumb, (x, y))
@@ -231,6 +255,47 @@ def save_objects_per_image(images: pd.DataFrame, out_path: Path) -> None:
     plt.close()
 
 
+def class_names_to_ids(class_names: list[str] | None) -> set[int] | None:
+    if not class_names:
+        return None
+    inverse = {name: cls_id for cls_id, name in CLASS_NAMES.items()}
+    missing = sorted(set(class_names) - set(inverse))
+    if missing:
+        raise ValueError(f"Unknown class names: {missing}")
+    return {inverse[name] for name in class_names}
+
+
+def filtered_views(
+    meta: pd.DataFrame,
+    images: pd.DataFrame,
+    modalities: list[str] | None,
+    class_names: list[str] | None,
+    require_class_present: bool,
+) -> tuple[pd.DataFrame, pd.DataFrame, set[int] | None]:
+    allowed_classes = class_names_to_ids(class_names)
+
+    image_mask = pd.Series(True, index=images.index)
+    if modalities:
+        image_mask &= images["modality"].isin(modalities)
+
+    if allowed_classes is not None and require_class_present:
+        class_rows = meta[pd.to_numeric(meta["class_id"], errors="coerce").isin(allowed_classes)]
+        image_mask &= images["image"].isin(set(class_rows["image"]))
+
+    images_filtered = images[image_mask].copy()
+    meta_filtered = meta[meta["image"].isin(set(images_filtered["image"]))].copy()
+
+    if allowed_classes is not None:
+        class_id_num = pd.to_numeric(meta_filtered["class_id"], errors="coerce")
+        meta_filtered = meta_filtered[class_id_num.isin(allowed_classes)].copy()
+
+        object_counts = meta_filtered.groupby("image").size()
+        images_filtered["n_objects"] = images_filtered["image"].map(object_counts).fillna(0).astype(int)
+        images_filtered["is_positive"] = images_filtered["n_objects"] > 0
+
+    return meta_filtered, images_filtered, allowed_classes
+
+
 def leakage_report(meta: pd.DataFrame, images: pd.DataFrame, out_path: Path) -> None:
     train = images[images["split"] == "train"]
     val = images[images["split"] == "val"]
@@ -279,14 +344,20 @@ def leakage_report(meta: pd.DataFrame, images: pd.DataFrame, out_path: Path) -> 
     out_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def dataset_summary(meta: pd.DataFrame, images: pd.DataFrame, out_path: Path, figure_paths: list[Path]) -> None:
+def dataset_summary(
+    meta: pd.DataFrame,
+    images: pd.DataFrame,
+    out_path: Path,
+    figure_paths: list[Path],
+    title: str = "YOLO BBox Dataset Audit",
+) -> None:
     class_counts = Counter(meta[meta["class_name"].notna() & (meta["class_name"] != "")]["class_name"])
     split_counts = Counter(images["split"])
     modality_counts = Counter(images["modality"])
     pos_counts = Counter("positive" if x else "negative" for x in images["is_positive"])
 
     lines = [
-        "# YOLO BBox Dataset Audit",
+        f"# {title}",
         "",
         f"Dataset images: `{len(images)}`",
         f"Metadata rows: `{len(meta)}`",
@@ -320,6 +391,13 @@ def main() -> None:
 
     meta = read_metadata(args.data_root)
     images = image_level_table(meta, args.data_root)
+    meta, images, allowed_classes = filtered_views(
+        meta,
+        images,
+        modalities=args.modalities,
+        class_names=args.classes,
+        require_class_present=args.require_class_present,
+    )
 
     figure_paths: list[Path] = []
     if args.skip_label_sheets:
@@ -337,6 +415,7 @@ def main() -> None:
                 grid_cols=args.grid_cols,
                 grid_rows=args.grid_rows,
                 positive_only=args.positive_only,
+                allowed_classes=allowed_classes,
             )
         )
         figure_paths.extend(
@@ -350,6 +429,7 @@ def main() -> None:
                 grid_cols=args.grid_cols,
                 grid_rows=args.grid_rows,
                 positive_only=args.positive_only,
+                allowed_classes=allowed_classes,
             )
         )
 
@@ -380,7 +460,12 @@ def main() -> None:
     figure_paths.append(objects_per_image_path)
 
     leakage_report(meta, images, args.out_dir / "split_leakage_report.md")
-    dataset_summary(meta, images, args.out_dir / "dataset_audit_summary.md", figure_paths)
+    title_bits = ["YOLO BBox Dataset Audit"]
+    if args.modalities:
+        title_bits.append("modalities=" + ",".join(args.modalities))
+    if args.classes:
+        title_bits.append("classes=" + ",".join(args.classes))
+    dataset_summary(meta, images, args.out_dir / "dataset_audit_summary.md", figure_paths, title=" | ".join(title_bits))
 
     print("=" * 80)
     print("Dataset audit complete")
