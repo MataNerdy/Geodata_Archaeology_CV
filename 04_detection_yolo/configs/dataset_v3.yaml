@@ -1,0 +1,23 @@
+variant: v3
+input_dir: ../datasets/dataset_yolo_bbox
+output_dir: ../datasets/dataset_yolo_bbox_v3_li_kurgan_binary
+modalities: [Li]
+negative_ratio: 1.0
+negative_ratio_mode: probability
+random_seed: 42
+class_id_map:
+  0: 0
+  1: 0
+names:
+  0: kurgan
+min_valid_fraction: 0.9
+positive_class_names:
+  - kurgany_tselye
+  - kurgany_povrezhdennye
+min_bbox_area_px: 240
+max_bbox_area_px: 435600
+require_non_edge_bbox: true
+negative_original_n_objects: 0
+use_metadata_boxes: true
+max_objects: 20
+overwrite: false
