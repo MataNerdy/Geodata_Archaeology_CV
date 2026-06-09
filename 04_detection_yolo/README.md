@@ -237,9 +237,48 @@ runs/yolo_kurgan_detection_v4_kurgans_li_ae_v4_yolov8s_balanced_colab_20260605_1
 
 Предыдущий локальный `runs_4` остается legacy artifact для сравнения, но основной v4 result в README теперь соответствует воспроизводимому Colab-run и checkpoint `best.pt`.
 
+### Baseline comparison: Li-only vs Li + Ae
+
+После абляции датасета были отдельно сравнены два кандидата на честный YOLO baseline:
+
+- `dataset_yolo_bbox_v3b_li_binary_medium` - более чистый Li-only dataset;
+- `dataset_yolo_bbox_v3d_li_ae_binary_medium` - более крупный Li + Ae dataset.
+
+Оба запуска использовали одинаковую конфигурацию:
+
+```text
+model = yolov8n.pt
+single_cls = True
+imgsz = 640
+epochs = 100
+seed = 42
+close_mosaic = 10
+patience = 25
+```
+
+Менялся только `dataset.yaml`.
+
+| Dataset | Images | Positive | BBox | Precision | Recall | mAP50 | mAP50-95 | Best epoch |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `v3b_li_medium` | 284 | 142 | 579 | 0.70544 | 0.28571 | 0.33904 | 0.11516 | 84 |
+| `v3d_li_ae_medium` | 622 | 311 | 1207 | 0.35951 | 0.21348 | 0.16164 | 0.06106 | 76 |
+
+Вывод: несмотря на меньший размер, `v3b_li_medium` является более сильным baseline. Добавление `Ae` почти удвоило число изображений и bbox, но ухудшило все основные метрики: precision, recall, mAP50 и mAP50-95.
+
+Разбор ошибок подтверждает это:
+
+| Dataset | Found GT | False negatives | False positives | Основной паттерн ошибок |
+|---|---:|---:|---:|---|
+| `v3b_li_medium` | 9 | 40 | 3 | Все false negatives относятся к `kurgany_povrezhdennye` на `Li`. |
+| `v3d_li_ae_medium` | 14 | 75 | 31 | Много false positives на `Ae`; false negatives есть и на damaged, и на whole Ae-объектах. |
+
+Для `v3d_li_ae_medium` модель чаще пропускает маленькие объекты: median bbox area у найденных объектов `34649.5 px`, у пропущенных - `11438 px`. Для `v3b_li_medium` картина другая: median bbox area у пропущенных объектов больше, чем у найденных (`104232 px` против `21021 px`), поэтому ошибки Li-only baseline связаны не только с размером, а также с визуальной неоднозначностью и damaged morphology.
+
+Практический вывод: текущий baseline стоит строить от `v3b_li_medium`. `Ae` не стоит добавлять в общий train set без отдельной проверки качества, modality-aware sampling или отдельной модели/ветки эксперимента.
+
 ## Результаты
 
-Наиболее полезной текущей версией является v4:
+В предыдущей серии v2-v5 наиболее полезной версией была v4:
 
 ```text
 YOLOv8s + cleaned balanced Li/Ae kurgan dataset
@@ -269,10 +308,14 @@ kurgany_povrezhdennye AP: ~0.07-0.08 -> ~0.15
 
 Confusion matrix подтверждает этот вывод: значительная часть объектов уходит в `background`, особенно для `kurgany_povrezhdennye`. Normalized confusion matrix показывает, что поврежденный класс распознается хуже и остается главным ограничением качества.
 
+После отдельной dataset-ablation серии текущим более чистым binary baseline является `v3b_li_medium`: YOLOv8n на Li-only dataset дает `mAP50 = 0.33904`, `precision = 0.70544`, `recall = 0.28571` и превосходит более крупный Li + Ae вариант.
+
 ## Key Findings
 
 - Основной прирост качества достигнут не архитектурой, а переработкой dataset.
 - `Li` дает более сильный структурный сигнал, чем aerial imagery.
+- В прямом сравнении baseline-кандидатов `v3b_li_medium` оказался сильнее, чем более крупный `v3d_li_ae_medium`: `mAP50 0.33904` против `0.16164`.
+- Добавление `Ae` без дополнительной чистки увеличивает число false positives и не повышает recall.
 - `kurgany_tselye` детектируются лучше, чем `kurgany_povrezhdennye`.
 - Агрессивная чистка повышает precision, но может ухудшить recall.
 - Балансировка v4 улучшила damaged-class AP.
@@ -300,6 +343,16 @@ runs/yolo_kurgan_detection_v4_kurgans_li_ae_v4_yolov8s_balanced_colab_20260605_1
 │   ├── val_batch*_labels/pred.jpg
 │   └── weights/best.pt
 └── kurgans_li_ae_v4_yolov8s_balanced_colab_val_conf_*/
+
+runs/yolo_baseline_comparison/
+├── analysis/
+│   ├── metrics_comparison.csv
+│   ├── baseline_comparison_report.md
+│   ├── object_size_found_vs_missed.csv
+│   └── */false_negative_contact_sheet.jpg
+└── runs/
+    ├── v3b_li_medium_yolov8n_img640/
+    └── v3d_li_ae_medium_yolov8n_img640/
 ```
 
 Для GitHub README лучше подготовить curated figures в `reports/figures/`, а не коммитить полные `runs/`.
