@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import textwrap
 from pathlib import Path
 
 
@@ -9,16 +10,18 @@ OUT = Path("notebooks/kaggle_yolo_v3b_vs_v3d_baseline_comparison.ipynb")
 
 
 def md(text: str) -> dict:
-    return {"cell_type": "markdown", "metadata": {}, "source": [line + "\n" for line in text.strip().splitlines()]}
+    text = textwrap.dedent(text).strip()
+    return {"cell_type": "markdown", "metadata": {}, "source": [line + "\n" for line in text.splitlines()]}
 
 
 def code(text: str) -> dict:
+    text = textwrap.dedent(text).strip()
     return {
         "cell_type": "code",
         "execution_count": None,
         "metadata": {},
         "outputs": [],
-        "source": [line + "\n" for line in text.strip().splitlines()],
+        "source": [line + "\n" for line in text.splitlines()],
     }
 
 
@@ -152,10 +155,14 @@ cells = [
     code(
         """
         import importlib.util
+        import sys
         import random
 
         spec = importlib.util.spec_from_file_location("ablation", PROJECT_DIR / "scripts" / "build_dataset_ablation.py")
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not load ablation script from {PROJECT_DIR / 'scripts' / 'build_dataset_ablation.py'}")
         ablation = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = ablation
         spec.loader.exec_module(ablation)
 
         source_meta = ablation.read_source_metadata(SOURCE_DATASET_DIR)
@@ -318,6 +325,7 @@ cells = [
             meta = pd.read_csv(info["metadata"])
             val_images = meta.drop_duplicates("image")
             val_images = val_images[val_images["split"] == "val"].copy()
+            val_rows = list(val_images.itertuples(index=False))
             image_paths = [str(Path(p)) for p in val_images["image"]]
             preds = model.predict(
                 source=image_paths,
@@ -336,12 +344,10 @@ cells = [
             meta, val_images, preds = predict_val(dataset_key)
             gt = load_ground_truth(meta)
             gt_by_image = {image: group.reset_index(drop=True) for image, group in gt.groupby("image")}
-            image_lookup = {Path(row.image).name: row for row in val_images.itertuples(index=False)}
             matched_rows, fn_rows, fp_rows = [], [], []
 
-            for result in preds:
-                image_name = Path(result.path).name
-                image_row = image_lookup[image_name]
+            for result_idx, result in enumerate(preds):
+                image_row = val_rows[result_idx]
                 source_image = image_row.image
                 gt_group = gt_by_image.get(source_image, pd.DataFrame()).copy()
                 gt_used = set()
