@@ -1,0 +1,5 @@
+dataset_version,images_total,train_images,val_images,positive_images,negative_images,bbox_total,bbox_per_positive_image_mean,median_bbox_area,edge_bbox_ratio,valid_fraction_mean,modalities,classes_used
+v3a_minimal,292,258,34,146,146,591,4.0479452054794525,12880.0,0.30287648054145516,0.9784273631423376,Li,kurgan
+v3b_medium,284,255,29,142,142,579,4.077464788732394,12880.0,0.30397236614853196,0.9872829741640065,Li,kurgan
+v3c_strict,146,126,20,73,73,231,3.164383561643836,17856.0,0.0,0.9922900309050962,Li,kurgan
+v3d_li_ae_medium,622,535,87,311,311,1207,3.8810289389067525,7917.0,0.2618061309030654,0.9937532264903247,"Ae,Li",kurgan
