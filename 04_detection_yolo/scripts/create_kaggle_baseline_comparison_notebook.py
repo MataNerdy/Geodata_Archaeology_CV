@@ -171,6 +171,10 @@ cells = [
         import sys
         import random
 
+        scripts_dir = PROJECT_DIR / "scripts"
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+
         spec = importlib.util.spec_from_file_location("ablation", PROJECT_DIR / "scripts" / "build_dataset_ablation.py")
         if spec is None or spec.loader is None:
             raise ImportError(f"Could not load ablation script from {PROJECT_DIR / 'scripts' / 'build_dataset_ablation.py'}")

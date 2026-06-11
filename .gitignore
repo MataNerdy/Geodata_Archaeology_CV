@@ -19,6 +19,15 @@ runs/**/train_split.csv
 runs/**/val_split.csv
 runs/**/history.csv
 
+# Generated experiment artifacts
+04_detection_yolo/runs/
+04_detection_yolo/reports/dataset_audit/
+04_detection_yolo/reports/dataset_ablation/**/*.png
+04_detection_yolo/reports/dataset_ablation/**/*.jpg
+04_detection_yolo/reports/dataset_ablation/**/*.jpeg
+04_detection_yolo/reports/dataset_ablation/**/train_labels_page_*.jpg
+04_detection_yolo/reports/dataset_ablation/**/val_labels_page_*.jpg
+
 *.pth
 *.pt
 *.ckpt
@@ -28,6 +37,7 @@ runs/**/history.csv
 .DS_Store
 
 02_unet_segmentation/archive/
+archive/
 encoder_modality_ablation.md
 PORTFOLIO_CLEANUP.md
 sampler_ablation.md

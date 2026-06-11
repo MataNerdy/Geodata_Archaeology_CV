@@ -14,6 +14,7 @@ DEFAULT_VERSIONS = {
     "v3c_strict": "../datasets/dataset_yolo_bbox_v3c_li_binary_strict",
     "v3d_li_ae_medium": "../datasets/dataset_yolo_bbox_v3d_li_ae_binary_medium",
     "v3e_train_li_ae_val_li": "../datasets/dataset_yolo_bbox_v3e_train_li_ae_val_li",
+    "v3f_archaeological_object": "../datasets/dataset_yolo_bbox_v3f_archaeological_object",
 }
 
 

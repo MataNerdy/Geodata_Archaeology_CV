@@ -1,0 +1,7 @@
+dataset_version,step_name,images_before,images_after,positive_before,positive_after,bbox_before,bbox_after,removed_images,removed_positive_images,removed_bbox
+v3f_archaeological_object,modality_filter_li,1693,625,956,341,6681,2442,1068,615,4239
+v3f_archaeological_object,valid_fraction_gte_0.85,625,481,341,264,2442,1048,144,77,1394
+v3f_archaeological_object,bbox_area_min_100_no_max,481,481,264,264,1048,1045,0,0,3
+v3f_archaeological_object,bbox_edge_filter_disabled,481,481,264,264,1045,1045,0,0,0
+v3f_archaeological_object,n_objects_lte_50,481,481,264,264,1045,1045,0,0,0
+v3f_archaeological_object,negative_sampling_ratio_1_by_split,481,481,264,264,1045,1045,0,0,0

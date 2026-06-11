@@ -140,6 +140,31 @@ The strongest analysis is currently in `results.txt` and `remarks.txt`:
 | v4 | Balanced cleaned Li + Ae kurgan dataset | YOLOv8s | Edge-ratio filter, `MIN_VALID_FRACTION = 0.25`, `MIN_CONTRAST = 3`, `MAX_OBJECTS = 20`, negative ratio `0.15`, class balancing | Notes: images `347`, boxes `772`; mAP50 approx. `0.198`, precision approx. `0.478`, recall approx. `0.195`; AP `tselye` `0.246`, AP `povrezhdennye` `0.151`. `runs_4` best row: P `0.54479`, R `0.18838`, mAP50 `0.22443`, mAP50-95 `0.12145`. | Best balanced variant; damaged-kurgan AP improved. |
 | v5 | Threshold tuning on v4-style model | YOLOv8s / v4 | confidence threshold tests at `0.10` and `0.15` | conf `0.10`: mAP50 approx. `0.187`, R approx. `0.195`, AP `povrezhdennye` approx. `0.130`; conf `0.15`: mAP50 approx. `0.178`, R approx. `0.195`, AP `povrezhdennye` approx. `0.111` | Lower thresholds did not improve recall; threshold is not the main bottleneck. |
 
+## Зафиксированный baseline после dataset ablation
+
+После абляции датасета текущий controlled baseline:
+
+```text
+dataset = dataset_yolo_bbox_v3b_li_binary_medium
+model = yolov8n.pt
+imgsz = 640
+epochs = 100
+single_cls = True
+seed = 42
+close_mosaic = 10
+patience = 25
+```
+
+| Experiment | Model | Train / Val | Precision | Recall | mAP50 | mAP50-95 | Best epoch | Conclusion |
+|---|---|---|---:|---:|---:|---:|---:|---|
+| `v3b_100_epoch_baseline` | YOLOv8n | Li / Li | 0.70544 | 0.28571 | 0.33904 | 0.11516 | 84 | Current best controlled Li-only baseline. |
+| `v3d_li_ae_medium` | YOLOv8n | Li+Ae / Li+Ae | 0.35951 | 0.21348 | 0.16164 | 0.06106 | 76 | Larger mixed-modality dataset is noisier and worse. |
+| `v3e_train_li_ae_val_li` | YOLOv8n | Li+Ae / Li | 0.46538 | 0.26531 | 0.25010 | 0.07726 | 60 | Ae in train does not improve Li validation quality. |
+| `v3b_400_epoch_limit` | YOLOv8n | Li / Li | 0.51425 | 0.26531 | 0.27816 | 0.09593 | 74 | Longer epoch limit did not help; early stopped at 105 epochs. |
+| `v3b_yolo26n_400_epoch_limit` | YOLO26n | Li / Li | 0.52136 | 0.20408 | 0.22218 | 0.09721 | 37 | YOLO26n did not improve the baseline; early stopped at 63 epochs. |
+
+Final decision: keep `v3b_li_medium + YOLOv8n + 100 epochs` as the baseline. The next useful experiments should target image scale (`imgsz = 1024`), a slightly larger model, or dataset/label improvements rather than more epochs.
+
 ## Код, который надо вынести в scripts/src
 
 - Dataset filtering from notebook cell 6 into `src/dataset/filter_kurgans.py` or `scripts/make_dataset_v2.py`.
