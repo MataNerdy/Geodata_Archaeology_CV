@@ -6,7 +6,7 @@ import textwrap
 from pathlib import Path
 
 
-OUT = Path("notebooks/kaggle_yolo_v3b_vs_v3d_baseline_comparison.ipynb")
+OUT = Path("notebooks/kaggle_yolo_v3b_v3d_v3e_ae_transfer_comparison.ipynb")
 
 
 def md(text: str) -> dict:
@@ -28,17 +28,19 @@ def code(text: str) -> dict:
 cells = [
     md(
         """
-        # YOLO Baseline Comparison: v3b Li-only vs v3d Li+Ae
+        # YOLO Ae Transfer Check: Does Ae Help LiDAR Detection?
 
-        Goal: compare two fixed dataset candidates without changing labels, split, or filtering rules.
+        Goal: test whether adding Ae to the training set improves detection on LiDAR validation images.
 
         Experiments:
 
-        - `dataset_yolo_bbox_v3b_li_binary_medium`: cleaner Li-only medium dataset.
-        - `dataset_yolo_bbox_v3d_li_ae_binary_medium`: larger Li+Ae medium dataset.
+        - `dataset_yolo_bbox_v3b_li_binary_medium`: Train Li, Val Li.
+        - `dataset_yolo_bbox_v3d_li_ae_binary_medium`: Train Li+Ae, Val Li+Ae.
+        - `dataset_yolo_bbox_v3e_train_li_ae_val_li`: Train Li+Ae, Val Li.
 
-        The training config is identical for both runs except `dataset.yaml`.
-        The notebook saves YOLO artifacts, metric comparison, FP/FN tables, object-size summaries, and a zip archive in `/kaggle/working`.
+        The training config is identical for all runs except `dataset.yaml`.
+        The key comparison is `v3b_li_medium` vs `v3e_train_li_ae_val_li` because both validate only on LiDAR images.
+        The notebook saves YOLO artifacts, metric comparison, FP/FN tables, object-size summaries, visual v3b-v3e comparison sheets, and a zip archive in `/kaggle/working`.
         """
     ),
     md("## 1. Configuration"),
@@ -53,7 +55,7 @@ cells = [
 
         KAGGLE_INPUT_ROOT = Path("/kaggle/input")
         WORK_DATA_ROOT = Path("/kaggle/working/datasets")
-        OUTPUT_ROOT = Path("/kaggle/working/yolo_baseline_comparison")
+        OUTPUT_ROOT = Path("/kaggle/working/yolo_ae_transfer_to_lidar")
         RUN_PROJECT = OUTPUT_ROOT / "runs"
         ANALYSIS_DIR = OUTPUT_ROOT / "analysis"
 
@@ -77,11 +79,22 @@ cells = [
                 "folder": "dataset_yolo_bbox_v3b_li_binary_medium",
                 "builder_name": "v3b_medium",
                 "run_name": "v3b_li_medium_yolov8n_img640",
+                "train_modalities": "Li",
+                "val_modalities": "Li",
             },
             "v3d_li_ae_medium": {
                 "folder": "dataset_yolo_bbox_v3d_li_ae_binary_medium",
                 "builder_name": "v3d_li_ae_medium",
                 "run_name": "v3d_li_ae_medium_yolov8n_img640",
+                "train_modalities": "Li+Ae",
+                "val_modalities": "Li+Ae",
+            },
+            "v3e_train_li_ae_val_li": {
+                "folder": "dataset_yolo_bbox_v3e_train_li_ae_val_li",
+                "builder_name": "v3e_train_li_ae_val_li",
+                "run_name": "v3e_train_li_ae_val_li_yolov8n_img640",
+                "train_modalities": "Li+Ae",
+                "val_modalities": "Li",
             },
         }
 
@@ -151,7 +164,7 @@ cells = [
         print("Source metadata:", SOURCE_DATASET_DIR / "metadata.csv")
         """
     ),
-    md("## 4. Materialize v3b and v3d Candidate Datasets"),
+    md("## 4. Materialize v3b, v3d, and v3e Candidate Datasets"),
     code(
         """
         import importlib.util
@@ -164,6 +177,13 @@ cells = [
         ablation = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = ablation
         spec.loader.exec_module(ablation)
+
+        v3e_spec = importlib.util.spec_from_file_location("v3e_builder", PROJECT_DIR / "scripts" / "build_v3e_train_li_ae_val_li.py")
+        if v3e_spec is None or v3e_spec.loader is None:
+            raise ImportError(f"Could not load v3e builder from {PROJECT_DIR / 'scripts' / 'build_v3e_train_li_ae_val_li.py'}")
+        v3e_builder = importlib.util.module_from_spec(v3e_spec)
+        sys.modules[v3e_spec.name] = v3e_builder
+        v3e_spec.loader.exec_module(v3e_builder)
 
         source_meta = ablation.read_source_metadata(SOURCE_DATASET_DIR)
         version_by_name = {v.name: v for v in ablation.VERSIONS}
@@ -182,15 +202,24 @@ cells = [
             else:
                 print(f"{display_name}: building fixed local candidate from source metadata")
                 impact_rows = []
-                version = version_by_name[spec_info["builder_name"]]
-                ablation.build_dataset(
-                    source_dir=SOURCE_DATASET_DIR,
-                    source_meta=source_meta,
-                    version=version,
-                    output_root=WORK_DATA_ROOT,
-                    overwrite=True,
-                    impact_rows=impact_rows,
-                )
+                if spec_info["builder_name"] == "v3e_train_li_ae_val_li":
+                    v3e_builder.materialize_dataset(
+                        source_dir=SOURCE_DATASET_DIR,
+                        source_meta=source_meta,
+                        output_root=WORK_DATA_ROOT,
+                        overwrite=True,
+                        impact_rows=impact_rows,
+                    )
+                else:
+                    version = version_by_name[spec_info["builder_name"]]
+                    ablation.build_dataset(
+                        source_dir=SOURCE_DATASET_DIR,
+                        source_meta=source_meta,
+                        version=version,
+                        output_root=WORK_DATA_ROOT,
+                        overwrite=True,
+                        impact_rows=impact_rows,
+                    )
 
             dataset_yaml = work_dir / "dataset.yaml"
             dataset_yaml.write_text(
@@ -207,9 +236,16 @@ cells = [
             df = pd.read_csv(work_dir / "metadata.csv")
             imgs = df.drop_duplicates("image")
             print(display_name, "images:", len(imgs), "positive:", int(imgs["is_positive"].sum()), "bbox:", int(df["class_name"].notna().sum()))
+            print("  split/modality:")
+            print(imgs.groupby(["split", "modality"]).size())
+            print("  split positive/negative:")
+            print(imgs.groupby(["split", "is_positive"]).size())
+            audit_dir = ANALYSIS_DIR / "dataset_audit" / display_name
+            ablation.write_audit(audit_dir, f"{display_name} Dataset Audit", df)
+            print("  audit:", audit_dir / "audit_summary.md")
         """
     ),
-    md("## 5. Train Both YOLO Models with Identical Config"),
+    md("## 5. Train All YOLO Models with Identical Config"),
     code(
         """
         from ultralytics import YOLO
@@ -266,6 +302,8 @@ cells = [
             best = results.loc[best_idx]
             return {
                 "Dataset": dataset_key,
+                "Train modalities": info["train_modalities"],
+                "Val modalities": info["val_modalities"],
                 "Images": int(len(images)),
                 "Positive": int(images["is_positive"].sum()),
                 "BBox": int(meta["class_name"].notna().sum()),
@@ -338,10 +376,10 @@ cells = [
                 exist_ok=True,
                 verbose=False,
             )
-            return meta, val_images, preds
+            return meta, val_images, val_rows, preds
 
         def match_predictions(dataset_key: str):
-            meta, val_images, preds = predict_val(dataset_key)
+            meta, val_images, val_rows, preds = predict_val(dataset_key)
             gt = load_ground_truth(meta)
             gt_by_image = {image: group.reset_index(drop=True) for image, group in gt.groupby("image")}
             matched_rows, fn_rows, fp_rows = [], [], []
@@ -482,7 +520,110 @@ cells = [
             print(key, "visual sheets saved to", out_dir)
         """
     ),
-    md("## 10. Object Size Analysis"),
+    md("## 10. v3b vs v3e Visual Comparison on Shared Li Validation Images"),
+    code(
+        """
+        def get_common_li_val_rows(left_key="v3b_li_medium", right_key="v3e_train_li_ae_val_li"):
+            left_meta = pd.read_csv(DATASETS[left_key]["metadata"])
+            right_meta = pd.read_csv(DATASETS[right_key]["metadata"])
+            left_imgs = left_meta.drop_duplicates("image")
+            right_imgs = right_meta.drop_duplicates("image")
+            left_val = left_imgs[(left_imgs["split"] == "val") & (left_imgs["modality"] == "Li")].copy()
+            right_val = right_imgs[(right_imgs["split"] == "val") & (right_imgs["modality"] == "Li")].copy()
+            common_sources = sorted(set(left_val["source_image"]) & set(right_val["source_image"]))
+            rows = []
+            for source_image in common_sources:
+                left_row = left_val[left_val["source_image"] == source_image].iloc[0]
+                right_row = right_val[right_val["source_image"] == source_image].iloc[0]
+                rows.append({"source_image": source_image, "v3b_image": left_row.image, "v3e_image": right_row.image})
+            return pd.DataFrame(rows), left_meta, right_meta
+
+        def gt_rows_for_source(meta: pd.DataFrame, source_image: str) -> pd.DataFrame:
+            gt = meta[(meta["source_image"] == source_image) & (meta["split"] == "val") & (meta["class_name"].notna())].copy()
+            if gt.empty:
+                return gt
+            gt["gt_box"] = gt.apply(xywhn_to_xyxy, axis=1)
+            return gt
+
+        def predict_image_boxes(dataset_key: str, image_paths: list[str]):
+            weights = RUN_DIRS[dataset_key] / "weights" / "best.pt"
+            model = YOLO(str(weights))
+            preds = model.predict(
+                source=image_paths,
+                imgsz=IMGSZ,
+                conf=CONF_FOR_ERROR_ANALYSIS,
+                iou=0.7,
+                save=False,
+                verbose=False,
+            )
+            out = []
+            for result in preds:
+                boxes = []
+                if result.boxes is not None and len(result.boxes) > 0:
+                    xyxy = result.boxes.xyxy.cpu().numpy()
+                    confs = result.boxes.conf.cpu().numpy()
+                    for idx, box in enumerate(xyxy):
+                        boxes.append({"box": box.tolist(), "conf": float(confs[idx])})
+                out.append(boxes)
+            return out
+
+        def draw_panel(image_path: str, title: str, gt_rows: pd.DataFrame | None = None, pred_boxes: list[dict] | None = None, panel_size: int = 320):
+            img = Image.open(image_path).convert("RGB")
+            src_w, src_h = img.size
+            img.thumbnail((panel_size, panel_size - 24))
+            canvas = Image.new("RGB", (panel_size, panel_size), "white")
+            draw = ImageDraw.Draw(canvas)
+            draw.text((8, 6), title, fill="black")
+            ox = (panel_size - img.size[0]) // 2
+            oy = 24 + ((panel_size - 24 - img.size[1]) // 2)
+            canvas.paste(img, (ox, oy))
+            sx = img.size[0] / src_w
+            sy = img.size[1] / src_h
+
+            if gt_rows is not None and not gt_rows.empty:
+                for _, row in gt_rows.iterrows():
+                    x1, y1, x2, y2 = row["gt_box"]
+                    draw.rectangle([x1 * sx + ox, y1 * sy + oy, x2 * sx + ox, y2 * sy + oy], outline="lime", width=3)
+
+            if pred_boxes:
+                for pred in pred_boxes:
+                    x1, y1, x2, y2 = pred["box"]
+                    draw.rectangle([x1 * sx + ox, y1 * sy + oy, x2 * sx + ox, y2 * sy + oy], outline="red", width=3)
+                    draw.text((x1 * sx + ox, max(24, y1 * sy + oy - 12)), f"{pred['conf']:.2f}", fill="red")
+            return canvas
+
+        common, v3b_meta, v3e_meta = get_common_li_val_rows()
+        comparison_dir = ANALYSIS_DIR / "v3b_vs_v3e_li_val_visual"
+        comparison_dir.mkdir(parents=True, exist_ok=True)
+        common.to_csv(comparison_dir / "shared_li_val_images.csv", index=False)
+
+        max_images = min(len(common), 60)
+        common_sample = common.head(max_images).reset_index(drop=True)
+        v3b_pred_lists = predict_image_boxes("v3b_li_medium", common_sample["v3b_image"].tolist()) if max_images else []
+        v3e_pred_lists = predict_image_boxes("v3e_train_li_ae_val_li", common_sample["v3e_image"].tolist()) if max_images else []
+
+        page_size = 5
+        panel_size = 320
+        for page_start in range(0, max_images, page_size):
+            page_rows = common_sample.iloc[page_start : page_start + page_size].reset_index(drop=True)
+            sheet = Image.new("RGB", (3 * panel_size, len(page_rows) * panel_size), "white")
+            for i, row in page_rows.iterrows():
+                idx = page_start + i
+                gt = gt_rows_for_source(v3e_meta, row.source_image)
+                gt_panel = draw_panel(row.v3e_image, "GT", gt_rows=gt, pred_boxes=None, panel_size=panel_size)
+                v3b_panel = draw_panel(row.v3b_image, "prediction_v3b", gt_rows=None, pred_boxes=v3b_pred_lists[idx], panel_size=panel_size)
+                v3e_panel = draw_panel(row.v3e_image, "prediction_v3e", gt_rows=None, pred_boxes=v3e_pred_lists[idx], panel_size=panel_size)
+                sheet.paste(gt_panel, (0, i * panel_size))
+                sheet.paste(v3b_panel, (panel_size, i * panel_size))
+                sheet.paste(v3e_panel, (2 * panel_size, i * panel_size))
+            page_id = page_start // page_size + 1
+            sheet.save(comparison_dir / f"v3b_vs_v3e_li_val_page_{page_id:02d}.jpg", quality=92)
+
+        print("Shared Li validation images:", len(common))
+        print("Saved visual comparison:", comparison_dir)
+        """
+    ),
+    md("## 11. Object Size Analysis"),
     code(
         """
         size_rows = []
@@ -523,7 +664,7 @@ cells = [
         display(class_summary)
         """
     ),
-    md("## 11. Markdown Report"),
+    md("## 12. Markdown Report"),
     code(
         """
         def md_table(df):
@@ -536,7 +677,7 @@ cells = [
             return "\\n".join(lines)
 
         report_lines = [
-            "# YOLO Baseline Comparison Report",
+            "# YOLO Ae Transfer to LiDAR Report",
             "",
             "## Metric Comparison",
             "",
@@ -583,15 +724,21 @@ cells = [
             "- `false_positive_contact_sheet.jpg`: model predictions not matched to a GT box.",
             "- `false_negative_contact_sheet.jpg`: GT boxes missed by the model.",
             "",
+            "`analysis/v3b_vs_v3e_li_val_visual/` contains side-by-side Li validation sheets:",
+            "",
+            "- `GT`",
+            "- `prediction_v3b`",
+            "- `prediction_v3e`",
+            "",
             "## Questions to Answer After Run",
             "",
-            "1. Which dataset has better mAP50 and mAP50-95?",
-            "2. Does Li+Ae improve recall enough to justify modality noise?",
-            "3. Does precision drop on Li+Ae due to Ae false positives?",
-            "4. Are missed objects smaller than found objects by median area/width/height?",
-            "5. Are damaged kurgans missed more often than whole kurgans?",
-            "6. Is the current bottleneck dataset coverage, label noise, object size, or model capacity?",
-            "7. Next experiment: v3b/v3d with imgsz=1024, or YOLOv8s, depending on the error profile.",
+            "1. Does `v3e_train_li_ae_val_li` improve Li validation recall over `v3b_li_medium`?",
+            "2. What is the precision cost of adding Ae to train?",
+            "3. Does `v3e` recover damaged kurgans missed by `v3b`?",
+            "4. Are `v3e` false positives concentrated in Li patterns that resemble Ae-trained objects?",
+            "5. Are missed objects smaller than found objects by median area/width/height?",
+            "6. Does `v3d` look bad mainly because it validates on Ae, or because Ae hurts shared training?",
+            "7. Should the next experiment use `v3b`, `v3e`, larger `imgsz`, or YOLOv8s?",
             "",
         ])
 
@@ -601,14 +748,14 @@ cells = [
         print("\\n".join(report_lines[:80]))
         """
     ),
-    md("## 12. Archive Outputs"),
+    md("## 13. Archive Outputs"),
     code(
         """
         import zipfile
         from datetime import datetime
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        archive_path = Path("/kaggle/working") / f"yolo_v3b_vs_v3d_baseline_comparison_{timestamp}.zip"
+        archive_path = Path("/kaggle/working") / f"yolo_ae_transfer_to_lidar_{timestamp}.zip"
         with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             for root in [OUTPUT_ROOT]:
                 for file in root.rglob("*"):

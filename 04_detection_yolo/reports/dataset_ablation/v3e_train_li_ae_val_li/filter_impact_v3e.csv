@@ -1,0 +1,7 @@
+dataset_version,step_name,images_before,images_after,positive_before,positive_after,bbox_before,bbox_after,removed_images,removed_positive_images,removed_bbox
+v3e_train_li_ae_val_li,split_modality_filter_train_li_ae_val_li,1693,1277,416,359,4889,4248,416,57,641
+v3e_train_li_ae_val_li,valid_fraction_gte_0.85,1277,1133,359,315,4248,2944,144,44,1304
+v3e_train_li_ae_val_li,bbox_area_min_100_no_max,1133,1133,315,315,2944,2912,0,0,32
+v3e_train_li_ae_val_li,bbox_edge_filter_disabled,1133,1133,315,315,2912,2912,0,0,0
+v3e_train_li_ae_val_li,n_objects_lte_50,1133,1120,315,302,2912,1167,13,13,1745
+v3e_train_li_ae_val_li,negative_sampling_ratio_1_by_split,1120,598,302,302,1167,1167,522,0,0
