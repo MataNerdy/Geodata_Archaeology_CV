@@ -105,12 +105,11 @@ cells = [
             check=True,
         )
 
+        os.chdir("/kaggle/working")
         if REPO_DIR.exists():
-            subprocess.run(["git", "-C", str(REPO_DIR), "fetch", "--depth", "1", "origin", REPO_BRANCH], check=False)
-            subprocess.run(["git", "-C", str(REPO_DIR), "checkout", REPO_BRANCH], check=False)
-            subprocess.run(["git", "-C", str(REPO_DIR), "pull", "--ff-only"], check=False)
-        else:
-            subprocess.run(["git", "clone", "--depth", "1", "--branch", REPO_BRANCH, REPO_URL, str(REPO_DIR)], check=True)
+            print("Removing existing Kaggle working clone:", REPO_DIR)
+            shutil.rmtree(REPO_DIR)
+        subprocess.run(["git", "clone", "--depth", "1", "--branch", REPO_BRANCH, REPO_URL, str(REPO_DIR)], check=True)
 
         os.chdir(PROJECT_DIR)
         print("Project dir:", PROJECT_DIR)
