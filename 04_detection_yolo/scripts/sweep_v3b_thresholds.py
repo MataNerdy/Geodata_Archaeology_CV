@@ -2,25 +2,36 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")
-
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 from ultralytics import YOLO
 
+os.environ.setdefault("MPLBACKEND", "Agg")
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
-CONF_SWEEP = [0.50, 0.25, 0.10, 0.05, 0.03, 0.01]
+try:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    MATPLOTLIB_ERROR = ""
+except Exception as exc:  # pragma: no cover - environment-specific fallback
+    plt = None
+    MATPLOTLIB_ERROR = repr(exc)
+
+
+CONF_SWEEP = [0.50, 0.25, 0.10, 0.05, 0.03, 0.01, 0.005, 0.003, 0.001]
 NMS_SWEEP = [0.40, 0.50, 0.60, 0.70, 0.80]
 VISUAL_CONFS = [0.25, 0.10, 0.05, 0.01]
 MATCH_IOU = 0.50
 COVERAGE_IOU = 0.30
+SCRIPT_VERSION = "2026-06-14-path-order-fix"
 
 
 @dataclass(frozen=True)
@@ -139,8 +150,10 @@ def predict(model: YOLO, image_paths: list[Path], conf: float, nms_iou: float, i
         kwargs["device"] = device
     results = model.predict(**kwargs)
     rows: list[dict] = []
-    for result in results:
-        image_key = str(Path(result.path).resolve())
+    for result_idx, result in enumerate(results):
+        # Ultralytics may rewrite result.path to synthetic names such as image0.jpg
+        # when a Python list is used as input. The result order follows source order.
+        image_key = str(image_paths[result_idx].resolve())
         if result.boxes is None or len(result.boxes) == 0:
             continue
         xyxy = result.boxes.xyxy.cpu().numpy()
@@ -314,6 +327,9 @@ def object_fields(row: dict) -> dict:
 
 
 def write_metrics_plot(df: pd.DataFrame, x_col: str, out_path: Path, title: str) -> None:
+    if plt is None:
+        write_placeholder_png(out_path, f"Plot skipped\n{MATPLOTLIB_ERROR}")
+        return
     fig, ax = plt.subplots(figsize=(8, 5))
     for col in ["Precision", "Recall", "F1", "coverage_rate"]:
         ax.plot(df[x_col], df[col], marker="o", label=col)
@@ -330,6 +346,16 @@ def write_metrics_plot(df: pd.DataFrame, x_col: str, out_path: Path, title: str)
 
 
 def write_distribution_plots(tp: pd.DataFrame, fn: pd.DataFrame, out_dir: Path) -> None:
+    if plt is None:
+        for name in [
+            "tp_fn_bbox_area_px_distribution.png",
+            "tp_fn_bbox_width_px_distribution.png",
+            "tp_fn_bbox_height_px_distribution.png",
+            "tp_prediction_confidence_distribution.png",
+            "fn_best_low_confidence_distribution.png",
+        ]:
+            write_placeholder_png(out_dir / name, f"Plot skipped\n{MATPLOTLIB_ERROR}")
+        return
     dist = []
     if not tp.empty:
         t = tp.copy()
@@ -431,6 +457,17 @@ def write_contact_sheet(images: list[Image.Image], out_path: Path, columns: int 
     sheet.save(out_path, quality=92)
 
 
+def write_placeholder_png(out_path: Path, text: str) -> None:
+    image = Image.new("RGB", (1000, 500), "white")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+    y = 24
+    for line in text.splitlines():
+        draw.text((24, y), line[:140], fill=(0, 0, 0), font=font)
+        y += 18
+    image.save(out_path)
+
+
 def write_visuals(
     conf: float,
     predictions: pd.DataFrame,
@@ -473,6 +510,24 @@ def format_float(value: float) -> str:
     return f"{value:.4f}"
 
 
+def markdown_table(df: pd.DataFrame, floatfmt: str = ".4f") -> str:
+    if df.empty:
+        return "_No rows._"
+    formatted = df.copy()
+    for col in formatted.columns:
+        if pd.api.types.is_float_dtype(formatted[col]):
+            formatted[col] = formatted[col].map(lambda value: format(value, floatfmt))
+    formatted = formatted.fillna("")
+    headers = list(formatted.columns)
+    lines = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+    ]
+    for _, row in formatted.iterrows():
+        lines.append("| " + " | ".join(str(row[col]) for col in headers) + " |")
+    return "\n".join(lines)
+
+
 def write_report(
     out_path: Path,
     confidence_df: pd.DataFrame,
@@ -501,11 +556,11 @@ def write_report(
         "",
         "## Confidence Sweep",
         "",
-        confidence_df.to_markdown(index=False, floatfmt=".4f"),
+        markdown_table(confidence_df),
         "",
         "## NMS Sweep",
         "",
-        nms_df.to_markdown(index=False, floatfmt=".4f"),
+        markdown_table(nms_df),
         "",
         "## Selected Configurations",
         "",
@@ -516,7 +571,7 @@ def write_report(
         "",
         "## TP / FN Object Size Summary",
         "",
-        size_summary(tp, fn).to_markdown(index=False, floatfmt=".2f"),
+        markdown_table(size_summary(tp, fn), floatfmt=".2f"),
         "",
         "## Interpretation",
         "",
@@ -577,14 +632,37 @@ def main() -> None:
 
     _, gt_by_image, image_paths = load_validation_data(metadata_path)
     model = YOLO(str(weights_path))
+    print(f"Threshold sweep script version: {SCRIPT_VERSION}")
+    print(f"Weights: {weights_path}")
+    print(f"Validation images: {len(image_paths)}")
+    print(f"Validation GT objects: {sum(len(group) for group in gt_by_image.values())}")
 
     prediction_cache: dict[tuple[float, float], pd.DataFrame] = {}
+    prediction_count_rows: list[dict] = []
 
     def get_predictions(conf: float, nms_iou: float) -> pd.DataFrame:
         key = (conf, nms_iou)
         if key not in prediction_cache:
             print(f"Predicting conf={conf:.2f}, nms_iou={nms_iou:.2f}")
             prediction_cache[key] = predict(model, image_paths, conf, nms_iou, args.imgsz, args.device)
+            pred_df = prediction_cache[key]
+            prediction_count_rows.append(
+                {
+                    "conf": conf,
+                    "nms_iou": nms_iou,
+                    "predictions": len(pred_df),
+                    "images_with_predictions": pred_df["image_key"].nunique() if not pred_df.empty else 0,
+                    "max_confidence": pred_df["confidence"].max() if not pred_df.empty else np.nan,
+                }
+            )
+            print(
+                "Predictions:",
+                len(pred_df),
+                "images:",
+                prediction_count_rows[-1]["images_with_predictions"],
+                "max_conf:",
+                prediction_count_rows[-1]["max_confidence"],
+            )
         return prediction_cache[key]
 
     low_conf_predictions = get_predictions(min(CONF_SWEEP), 0.50)
@@ -620,6 +698,7 @@ def main() -> None:
     confidence_df.to_csv(out_dir / "confidence_sweep_metrics.csv", index=False)
     nms_df.to_csv(out_dir / "nms_sweep_metrics.csv", index=False)
     all_df.to_csv(out_dir / "all_sweep_metrics.csv", index=False)
+    pd.DataFrame(prediction_count_rows).to_csv(out_dir / "prediction_counts.csv", index=False)
     best_tp.to_csv(out_dir / "tp_objects_best_f1.csv", index=False)
     best_fp.to_csv(out_dir / "false_positives_best_f1.csv", index=False)
     best_fn.to_csv(out_dir / "false_negatives_best_f1.csv", index=False)
