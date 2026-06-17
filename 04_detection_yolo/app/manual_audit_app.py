@@ -97,14 +97,23 @@ def filter_table(df: pd.DataFrame) -> pd.DataFrame:
     with st.sidebar:
         st.header("Filters")
         only_undecided = st.checkbox("Only undecided", value=True)
+        decision_filter = st.selectbox(
+            "Decision",
+            ["all", "keep", "remove_image", "fix_label", "uncertain", "undecided"],
+            index=0,
+        )
         split = st.selectbox("Split", ["all", "train", "val"])
         polarity = st.radio("Objects", ["all", "positives only", "negatives only"], horizontal=False)
         edge_only = st.checkbox("Edge objects only", value=False)
         sort_mode = st.selectbox("Sort", ["original order", "largest bbox first", "smallest bbox first"])
 
     filtered = df.copy()
-    if only_undecided:
+    if only_undecided and decision_filter == "all":
         filtered = filtered[filtered["saved_decision"].eq("")]
+    if decision_filter == "undecided":
+        filtered = filtered[filtered["saved_decision"].eq("")]
+    elif decision_filter != "all":
+        filtered = filtered[filtered["saved_decision"].eq(decision_filter)]
     if split != "all":
         filtered = filtered[filtered["split"].eq(split)]
     if polarity == "positives only":
