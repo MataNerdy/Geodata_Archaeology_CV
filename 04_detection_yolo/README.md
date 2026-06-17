@@ -293,6 +293,67 @@ patience = 25
 
 Вывод: текущий bottleneck не в числе эпох и не в замене nano-архитектуры. Для следующего этапа разумнее проверять `imgsz = 1024`, YOLOv8s/YOLO26s или улучшение данных и разметки, а не просто увеличивать training budget.
 
+### Хроника экспериментов из `runs/`
+
+Ниже зафиксирована фактическая история локальных и Kaggle/Colab запусков, которые сейчас лежат в `runs/`. Таблица использует best epoch по `metrics/mAP50(B)` из `results.csv`, если не указано иначе.
+
+| Stage | Run folder | Dataset / idea | Model | imgsz | Best epoch | Precision | Recall | mAP50 | mAP50-95 | Основной вывод |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---|
+| Early baseline | `runs/runs_2` | ранний Li/Ae kurgan baseline | YOLO | TODO | 51 | 0.43985 | 0.18478 | 0.18323 | 0.12095 | Модель обучается, но recall низкий. |
+| Early v4-like run | `runs/runs_4` | более чистый/сбалансированный kurgan dataset | YOLO | TODO | 52 | 0.54479 | 0.18838 | 0.22443 | 0.12145 | Небольшой прирост mAP50 относительно `runs_2`, но recall почти не вырос. |
+| v3 Li binary Kaggle | `runs/yolo_kurgan_detection_v3_li_binary_20260609_091639` | Li-only binary kurgan | YOLOv8n | 640 | 35 | 0.52643 | 0.26923 | 0.22620 | 0.06808 | Li-only направление выглядит перспективнее, но локализация остается слабой. |
+| v4 Colab balanced | `runs/yolo_kurgan_detection_v4_kurgans_li_ae_v4_yolov8s_balanced_colab_20260605_131149` | balanced Li/Ae kurgan dataset | YOLOv8s | 1024 | 48 | 0.48504 | 0.20424 | 0.21359 | 0.12590 | Сбалансированный v4 улучшил damaged-class AP, но не решил recall bottleneck. |
+| v3b controlled baseline | `runs/yolo_baseline_comparison/runs/v3b_li_medium_yolov8n_img640` | Li-only medium, binary kurgan | YOLOv8n | 640 | 84 | 0.70544 | 0.28571 | 0.33904 | 0.11516 | Лучший controlled baseline до ручной чистки. |
+| v3d Li+Ae comparison | `runs/yolo_baseline_comparison/runs/v3d_li_ae_medium_yolov8n_img640` | Li + Ae medium, binary kurgan | YOLOv8n | 640 | 76 | 0.35951 | 0.21348 | 0.16164 | 0.06106 | Увеличение датасета за счет `Ae` ухудшило все основные метрики. |
+| v3e Ae transfer check | `runs/yolo_ae_transfer_to_lidar/runs/v3e_train_li_ae_val_li_yolov8n_img640` | train Li+Ae, val Li | YOLOv8n | 640 | 60 | 0.46538 | 0.26531 | 0.25010 | 0.07726 | `Ae` как train-сигнал не превзошел чистый Li-only baseline на Li validation. |
+| v3b long run | `runs/yolo_v3b_400_epochs` | v3b, лимит 400 epochs | YOLOv8n | 640 | 74 | 0.51425 | 0.26531 | 0.27816 | 0.09593 | Больше эпох не помогло; early stopping остановил run на 105 эпохах. |
+| v3b YOLO26 check | `runs/yolo_v3b_yolo26_400_epochs` | v3b, YOLO26n, лимит 400 epochs | YOLO26n | 640 | 37 | 0.52136 | 0.20408 | 0.22218 | 0.09721 | YOLO26n не улучшил YOLOv8n baseline. |
+| v3b high-resolution check | `runs/yolo_v3b_img1024_20260614_150032` | v3b, larger input | YOLOv8n | 1024 | 89 | 0.43482 | 0.24490 | 0.24261 | 0.10972 | `imgsz=1024` ухудшил обычные метрики; низкий threshold дает больше proposals, но с большим числом FP. |
+| v3g manual-clean baseline | `runs/yolo_v3g_manual_keep_20260617_181819` | manual keep-only Li medium, new split | YOLOv8n | 640 | 49 | 0.52174 | 0.20354 | 0.20386 | 0.08053 | Ручная чистка дала более честный clean baseline, но не подняла detection mAP. |
+
+Короткая интерпретация этой истории:
+
+- лучший обычный detector по `mAP50` сейчас остается `v3b_li_medium + YOLOv8n + imgsz=640`;
+- `Li + Ae` не улучшил качество ни в прямом сравнении v3d, ни в transfer-проверке v3e;
+- увеличение эпох, переход на YOLO26n и `imgsz=1024` не решили bottleneck;
+- ручная чистка v3g убрала заведомо плохие tiles и дала более надежный validation split, но метрики стали ниже: это сигнал, что прежний v3b частично выигрывал от особенностей старого split/датасета, а не только от лучшего обобщения.
+
+### Inference-only и proposal mode
+
+После обучения v3g был проведен отдельный inference-only анализ без переобучения. Цель была не повысить mAP, а проверить, может ли YOLO работать как генератор кандидатов для будущего пайплайна:
+
+```text
+LiDAR tile
+    ↓
+YOLO low-confidence proposal generation
+    ↓
+bbox crop
+    ↓
+segmentation refinement
+```
+
+Для `v3g_li_manual_keep_yolov8n_640` threshold sweep при `NMS IoU = 0.5` показал:
+
+| Confidence | TP | FP | FN | Precision | Recall | Coverage@IoU0.3 | FP/image | Вывод |
+|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 0.25 | 13 | 2 | 100 | 0.8667 | 0.1150 | 0.1150 | 0.04 | Стандартный threshold слишком консервативен. |
+| 0.05 | 19 | 29 | 94 | 0.3958 | 0.1681 | 0.1858 | 0.53 | Лучший умеренный proposal-режим. |
+| 0.03 | 20 | 47 | 93 | 0.2985 | 0.1770 | 0.2124 | 0.85 | Больше coverage, но FP уже заметно растет. |
+| 0.01 | 21 | 113 | 92 | 0.1567 | 0.1858 | 0.2743 | 2.05 | Может быть полезно для aggressive proposal generation. |
+| 0.005 | 27 | 211 | 86 | 0.1134 | 0.2389 | 0.3363 | 3.84 | Recall растет, но цена в FP высокая. |
+| 0.001 | 34 | 1008 | 79 | 0.0326 | 0.3009 | 0.4690 | 18.33 | Почти diagnostic mode: показывает скрытые кандидаты, но непрактичен без сильного downstream-фильтра. |
+
+Отдельный proposal coverage анализ на `conf=0.001`:
+
+| IoU threshold | Covered GT | Total GT | Coverage rate |
+|---:|---:|---:|---:|
+| 0.10 | 73 | 113 | 0.6460 |
+| 0.20 | 60 | 113 | 0.5310 |
+| 0.30 | 53 | 113 | 0.4690 |
+| 0.50 | 34 | 113 | 0.3009 |
+
+Вывод по inference-only анализу: модель действительно слишком консервативна при стандартных threshold, но это не единственная проблема. При низких confidence она находит больше кандидатов, однако FP быстро растут. Для proposal pipeline наиболее реалистичный стартовый режим - `conf=0.03-0.05`; `conf=0.01` стоит проверять только если downstream segmentation/refinement способен дешево отсеивать ложные crop-кандидаты.
+
 ## Результаты
 
 В предыдущей серии v2-v5 наиболее полезной версией была v4:
@@ -329,6 +390,8 @@ Confusion matrix подтверждает этот вывод: значител�
 
 Дополнительные проверки с `epochs = 400` и `YOLO26n` не улучшили этот baseline: лучший результат остается `v3b_li_medium + YOLOv8n + 100 epochs`.
 
+После ручного аудита был собран `v3g_li_manual_keep`: 258 images, 133 positive images, 125 negative images и 566 bbox. На новом region-aware split модель `YOLOv8n` получила `precision = 0.52174`, `recall = 0.20354`, `mAP50 = 0.20386`, `mAP50-95 = 0.08053`. Этот результат ниже v3b, но он важен как более честная clean-baseline точка после удаления битых tiles и неправильных bbox.
+
 ## Key Findings
 
 - Основной прирост качества достигнут не архитектурой, а переработкой dataset.
@@ -336,6 +399,9 @@ Confusion matrix подтверждает этот вывод: значител�
 - В прямом сравнении baseline-кандидатов `v3b_li_medium` оказался сильнее, чем более крупный `v3d_li_ae_medium`: `mAP50 0.33904` против `0.16164`.
 - Добавление `Ae` без дополнительной чистки увеличивает число false positives и не повышает recall.
 - Увеличение лимита обучения до 400 эпох и замена YOLOv8n на YOLO26n не улучшили Li-only baseline.
+- `imgsz = 1024` не улучшил controlled v3b baseline как обычный detector.
+- Ручная чистка v3g улучшила доверие к dataset/split, но не решила проблему качества detector.
+- Low-confidence inference может быть полезен как proposal generation, но только вместе с downstream filtering/segmentation.
 - `kurgany_tselye` детектируются лучше, чем `kurgany_povrezhdennye`.
 - Агрессивная чистка повышает precision, но может ухудшить recall.
 - Балансировка v4 улучшила damaged-class AP.
