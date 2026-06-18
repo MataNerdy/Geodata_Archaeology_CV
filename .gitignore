@@ -30,6 +30,7 @@ runs/**/history.csv
 04_detection_yolo/reports/threshold_sweep*/
 04_detection_yolo/manual_audit/previews/
 04_detection_yolo/manual_val_region_review/*.jpg
+04_detection_yolo/manual_val_region_review_other_classes/*.jpg
 
 *.pth
 *.pt
