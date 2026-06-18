@@ -310,13 +310,17 @@ patience = 25
 | v3b YOLO26 check | `runs/yolo_v3b_yolo26_400_epochs` | v3b, YOLO26n, лимит 400 epochs | YOLO26n | 640 | 37 | 0.52136 | 0.20408 | 0.22218 | 0.09721 | YOLO26n не улучшил YOLOv8n baseline. |
 | v3b high-resolution check | `runs/yolo_v3b_img1024_20260614_150032` | v3b, larger input | YOLOv8n | 1024 | 89 | 0.43482 | 0.24490 | 0.24261 | 0.10972 | `imgsz=1024` ухудшил обычные метрики; низкий threshold дает больше proposals, но с большим числом FP. |
 | v3g manual-clean baseline | `runs/yolo_v3g_manual_keep_20260617_181819` | manual keep-only Li medium, new split | YOLOv8n | 640 | 49 | 0.52174 | 0.20354 | 0.20386 | 0.08053 | Ручная чистка дала более честный clean baseline, но не подняла detection mAP. |
+| v3h curated validation | `runs/yolo_v3h_curated_val_20260618_131256` | manual-clean dataset with curated region validation | YOLOv8n | 640 | 60 | 0.42761 | 0.24107 | 0.27114 | 0.12092 | Curated validation поднял mAP относительно v3g, но выявил сильный региональный bottleneck. |
+| v3h no-Saratov sanity check | `runs/yolo_v3h_no_saratov_20260618_163640` | same v3h dataset, `028_САРАТОВ` moved from val to train | YOLOv8n | 640 | 82 | 0.68752 | 0.40909 | 0.46433 | 0.20339 | Удаление Саратова из val резко улучшило метрики, но validation стал маленьким и менее сбалансированным. |
 
 Короткая интерпретация этой истории:
 
-- лучший обычный detector по `mAP50` сейчас остается `v3b_li_medium + YOLOv8n + imgsz=640`;
+- лучший controlled baseline на полноценном сравнении датасетов остается `v3b_li_medium + YOLOv8n + imgsz=640`; no-Saratov показывает более высокий `mAP50`, но только как diagnostic split на маленькой validation выборке;
 - `Li + Ae` не улучшил качество ни в прямом сравнении v3d, ни в transfer-проверке v3e;
 - увеличение эпох, переход на YOLO26n и `imgsz=1024` не решили bottleneck;
 - ручная чистка v3g убрала заведомо плохие tiles и дала более надежный validation split, но метрики стали ниже: это сигнал, что прежний v3b частично выигрывал от особенностей старого split/датасета, а не только от лучшего обобщения.
+- curated split v3h показал, что качество сильно зависит от состава validation regions; регион `028_САРАТОВ` оказался главным источником false negatives.
+- no-Saratov run полезен как diagnostic/sanity check, но не должен автоматически считаться финальным baseline: validation уменьшается до 31 images / 27 positive / 66 bbox и становится перекошенной в сторону `kurgany_povrezhdennye`.
 
 ### Inference-only и proposal mode
 
@@ -353,6 +357,76 @@ segmentation refinement
 | 0.50 | 34 | 113 | 0.3009 |
 
 Вывод по inference-only анализу: модель действительно слишком консервативна при стандартных threshold, но это не единственная проблема. При низких confidence она находит больше кандидатов, однако FP быстро растут. Для proposal pipeline наиболее реалистичный стартовый режим - `conf=0.03-0.05`; `conf=0.01` стоит проверять только если downstream segmentation/refinement способен дешево отсеивать ложные crop-кандидаты.
+
+### Curated validation: Saratov effect
+
+После ручной чистки был собран `v3h_li_manual_curated_val` с validation regions:
+
+```text
+008_СЕЛЯНЕ
+019_ОСЕЧКИ_1
+025_ШУМГОРА
+028_САРАТОВ
+037_КЧР
+```
+
+Полный curated validation run:
+
+| Dataset | Val images | Val positive | Val bbox | Precision | Recall | mAP50 | mAP50-95 | Best epoch |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `v3h_li_manual_curated_val` | 46 | 38 | 112 | 0.42761 | 0.24107 | 0.27114 | 0.12092 | 60 |
+
+Детальный FN-аудит этого run показал, что `028_САРАТОВ` доминирует среди ошибок:
+
+| Region | False negatives |
+|---|---:|
+| `028_САРАТОВ` | 44 |
+| `008_СЕЛЯНЕ` | 17 |
+| `019_ОСЕЧКИ_1` | 12 |
+| `025_ШУМГОРА` | 8 |
+| `037_КЧР` | 7 |
+
+Типы FN на полном v3h при рабочей метрике `conf >= 0.25`, `IoU >= 0.5`:
+
+| FN type | Count | Интерпретация |
+|---|---:|---|
+| `metric_miss` | 43 | Предсказание близко к объекту, но не проходит рабочий threshold. |
+| `hard_miss` | 28 | Модель не генерирует достаточно близкий bbox-кандидат. |
+| `near_miss` | 17 | Есть приблизительный bbox-кандидат, но локализация недостаточна для IoU 0.5. |
+
+Чтобы проверить, не ломает ли Саратов всю validation-картину, был запущен sanity check `v3h_no_saratov`: `028_САРАТОВ` перенесен из validation в train, остальные настройки обучения оставлены прежними.
+
+| Dataset | Train images | Val images | Val bbox | Precision | Recall | mAP50 | mAP50-95 | Best epoch |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `v3h_li_manual_curated_val` | 212 | 46 | 112 | 0.42761 | 0.24107 | 0.27114 | 0.12092 | 60 |
+| `v3h_no_saratov` | 227 | 31 | 66 | 0.68752 | 0.40909 | 0.46433 | 0.20339 | 82 |
+
+No-Saratov результат сильно выше, но интерпретация осторожная: validation после удаления Саратова стала маленькой и менее репрезентативной. В ней осталось только 31 image, 27 positive images и 66 bbox; class balance в val смещен к `kurgany_povrezhdennye` (`58` bbox против `8` `kurgany_tselye`).
+
+Региональный аудит no-Saratov validation при `conf = 0.25`, `IoU = 0.5`:
+
+| Region | GT | TP | FN | Recall | `metric_miss` | `near_miss` | `hard_miss` |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `019_ОСЕЧКИ_1` | 12 | 3 | 9 | 0.250 | 8 | 0 | 1 |
+| `037_КЧР` | 12 | 3 | 9 | 0.250 | 6 | 1 | 2 |
+| `008_СЕЛЯНЕ` | 30 | 11 | 19 | 0.367 | 11 | 4 | 4 |
+| `025_ШУМГОРА` | 12 | 5 | 7 | 0.417 | 6 | 0 | 1 |
+
+Threshold sweep для no-Saratov показывает, что значительная часть объектов существует среди low-confidence кандидатов:
+
+| Confidence | TP | FP | FN | Precision | Recall | F1 | Coverage@IoU0.3 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.50 | 12 | 2 | 54 | 0.857 | 0.182 | 0.300 | 0.879 |
+| 0.25 | 22 | 9 | 44 | 0.710 | 0.333 | 0.454 | 0.879 |
+| 0.10 | 29 | 29 | 37 | 0.500 | 0.439 | 0.468 | 0.879 |
+| 0.05 | 37 | 54 | 29 | 0.407 | 0.561 | 0.471 | 0.879 |
+| 0.03 | 39 | 79 | 27 | 0.331 | 0.591 | 0.424 | 0.879 |
+| 0.01 | 43 | 244 | 23 | 0.150 | 0.652 | 0.244 | 0.879 |
+| 0.005 | 47 | 529 | 19 | 0.082 | 0.712 | 0.146 | 0.879 |
+| 0.003 | 51 | 917 | 15 | 0.053 | 0.773 | 0.099 | 0.879 |
+| 0.001 | 53 | 2540 | 13 | 0.020 | 0.803 | 0.040 | 0.879 |
+
+Вывод: `028_САРАТОВ` нужно анализировать отдельно как hard validation region или потенциально отдельный domain slice. На текущем этапе no-Saratov run доказывает, что модель может показывать заметно лучшую детекцию на более стабильных регионах, но финальный baseline должен оцениваться на validation split, где Саратов либо явно представлен как сложный регион, либо вынесен в отдельный stress-test.
 
 ## Результаты
 
@@ -392,6 +466,8 @@ Confusion matrix подтверждает этот вывод: значител�
 
 После ручного аудита был собран `v3g_li_manual_keep`: 258 images, 133 positive images, 125 negative images и 566 bbox. На новом region-aware split модель `YOLOv8n` получила `precision = 0.52174`, `recall = 0.20354`, `mAP50 = 0.20386`, `mAP50-95 = 0.08053`. Этот результат ниже v3b, но он важен как более честная clean-baseline точка после удаления битых tiles и неправильных bbox.
 
+Следующий curated split `v3h_li_manual_curated_val` дал `precision = 0.42761`, `recall = 0.24107`, `mAP50 = 0.27114`, `mAP50-95 = 0.12092`. Дополнительный no-Saratov sanity check поднял метрики до `precision = 0.68752`, `recall = 0.40909`, `mAP50 = 0.46433`, `mAP50-95 = 0.20339`, но на меньшей validation выборке. Это главный свежий сигнал: проблема не только в модели, но и в сильной региональной неоднородности данных.
+
 ## Key Findings
 
 - Основной прирост качества достигнут не архитектурой, а переработкой dataset.
@@ -401,6 +477,8 @@ Confusion matrix подтверждает этот вывод: значител�
 - Увеличение лимита обучения до 400 эпох и замена YOLOv8n на YOLO26n не улучшили Li-only baseline.
 - `imgsz = 1024` не улучшил controlled v3b baseline как обычный detector.
 - Ручная чистка v3g улучшила доверие к dataset/split, но не решила проблему качества detector.
+- Curated validation v3h выявил региональный bottleneck: `028_САРАТОВ` дает непропорционально много false negatives.
+- No-Saratov sanity check резко повышает метрики, но его нельзя читать как окончательную победу из-за маленького и смещенного validation split.
 - Low-confidence inference может быть полезен как proposal generation, но только вместе с downstream filtering/segmentation.
 - `kurgany_tselye` детектируются лучше, чем `kurgany_povrezhdennye`.
 - Агрессивная чистка повышает precision, но может ухудшить recall.
