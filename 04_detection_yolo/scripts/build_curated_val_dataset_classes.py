@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", type=Path, default=Path("../datasets"))
     parser.add_argument("--output-name", default="dataset_yolo_bbox_other_classes_manual_curated_val")
     parser.add_argument("--target-classes", nargs="+", default=DEFAULT_TARGET_CLASSES)
+    parser.add_argument("--modalities", nargs="+", default=["Li"])
     parser.add_argument("--negative-ratio", type=float, default=None, help="Optional per-split negative/positive image cap.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--overwrite", action="store_true")
@@ -56,11 +57,13 @@ def read_decisions(path: Path) -> pd.DataFrame:
     )
 
 
-def read_metadata(source_dir: Path, decisions_path: Path, target_classes: set[str]) -> pd.DataFrame:
+def read_metadata(source_dir: Path, decisions_path: Path, target_classes: set[str], modalities: set[str] | None) -> pd.DataFrame:
     df = pd.read_csv(source_dir / "metadata.csv")
     df["is_positive"] = df["is_positive"].astype(bool)
     if "source_class_name" not in df.columns:
         df["source_class_name"] = df["class_name"]
+    if modalities:
+        df = df[df["modality"].astype(str).isin(modalities)].copy()
     if "source_id" not in df.columns:
         source_cols = [col for col in ["region", "modality", "raster_file"] if col in df.columns]
         df["source_id"] = df[source_cols].astype(str).agg("|".join, axis=1)
@@ -234,7 +237,7 @@ def markdown_table(df: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
-def write_reports(out_dir: Path, meta: pd.DataFrame, leak: dict[str, list[str]], target_classes: list[str]) -> None:
+def write_reports(out_dir: Path, meta: pd.DataFrame, leak: dict[str, list[str]], target_classes: list[str], modalities: list[str]) -> None:
     images = meta.drop_duplicates("image").copy()
     boxes = meta[meta["is_target_object"]].copy()
     val_regions = sorted(images[images["split"].eq("val")]["region"].dropna().astype(str).unique())
@@ -245,6 +248,7 @@ def write_reports(out_dir: Path, meta: pd.DataFrame, leak: dict[str, list[str]],
         "# Curated Validation Split Summary",
         "",
         f"Target classes: `{', '.join(target_classes)}`",
+        f"Modalities: `{', '.join(modalities) if modalities else 'ALL'}`",
         "",
         "## Split Counts",
         "",
@@ -274,10 +278,11 @@ def main() -> None:
     source_dir = args.source_dir.resolve()
     out_dir = (args.output_root / args.output_name).resolve()
     target_classes = [str(c) for c in args.target_classes]
+    modalities = [str(m) for m in args.modalities] if args.modalities else []
     unknown = sorted(set(target_classes) - set(CLASS_NAME_TO_ID))
     if unknown:
         raise ValueError(f"Unknown target classes: {unknown}")
-    meta = read_metadata(source_dir, args.decisions, set(target_classes))
+    meta = read_metadata(source_dir, args.decisions, set(target_classes), set(modalities) if modalities else None)
     meta["previous_split"] = meta["split"]
     decisions = read_region_decisions(args.regions_csv)
     meta = meta.merge(decisions, on="region", how="left")
@@ -300,7 +305,7 @@ def main() -> None:
         raise ValueError(f"Leakage detected; refusing to build dataset.\n{details}")
 
     out_meta = materialize(source_dir, meta, out_dir, target_classes, args.overwrite)
-    write_reports(out_dir, out_meta, leak, target_classes)
+    write_reports(out_dir, out_meta, leak, target_classes, modalities)
     print("Dataset:", out_dir)
     print(split_counts(out_meta).to_string(index=False))
     print("split_summary.md:", out_dir / "split_summary.md")

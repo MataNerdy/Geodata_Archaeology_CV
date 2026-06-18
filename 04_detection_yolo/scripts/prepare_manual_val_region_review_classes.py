@@ -34,6 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--decisions", type=Path, default=Path("manual_audit/audit_decisions.csv"))
     parser.add_argument("--out-dir", type=Path, default=Path("manual_val_region_review_other_classes"))
     parser.add_argument("--target-classes", nargs="+", default=DEFAULT_TARGET_CLASSES)
+    parser.add_argument("--modalities", nargs="+", default=["Li"])
     parser.add_argument("--thumb-size", type=int, default=260)
     parser.add_argument("--max-images-per-region", type=int, default=80)
     parser.add_argument("--include-empty-regions", action="store_true")
@@ -67,11 +68,13 @@ def read_decisions(path: Path) -> pd.DataFrame:
     )
 
 
-def read_metadata(dataset_dir: Path, decisions_path: Path, target_classes: set[str]) -> pd.DataFrame:
+def read_metadata(dataset_dir: Path, decisions_path: Path, target_classes: set[str], modalities: set[str] | None) -> pd.DataFrame:
     df = pd.read_csv(dataset_dir / "metadata.csv")
     df["is_positive"] = df["is_positive"].astype(bool)
     if "source_class_name" not in df.columns:
         df["source_class_name"] = df["class_name"]
+    if modalities:
+        df = df[df["modality"].astype(str).isin(modalities)].copy()
     for col in [
         "bbox_area_px",
         "bbox_x1_px",
@@ -268,10 +271,11 @@ def main() -> None:
     args = parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
     target_classes = [str(c) for c in args.target_classes]
+    modalities = [str(m) for m in args.modalities] if args.modalities else []
     unknown = sorted(set(target_classes) - set(CLASS_NAME_TO_ID))
     if unknown:
         raise ValueError(f"Unknown target classes: {unknown}")
-    df = read_metadata(args.dataset_dir, args.decisions, set(target_classes))
+    df = read_metadata(args.dataset_dir, args.decisions, set(target_classes), set(modalities) if modalities else None)
     summary = build_region_summary(df, args.out_dir, target_classes, args.include_empty_regions)
     if not args.skip_contact_sheets:
         write_region_sheets(df, args.dataset_dir, args.out_dir, args.thumb_size, args.max_images_per_region, args.overwrite, args.include_empty_regions)
@@ -286,6 +290,7 @@ def main() -> None:
         template.to_csv(template_path, index=False)
 
     print("Target classes:", ", ".join(target_classes))
+    print("Modalities:", ", ".join(modalities) if modalities else "ALL")
     print("Region summary:", summary_path)
     print("Manual decision template:", template_path)
     print("Contact sheets:", args.out_dir)

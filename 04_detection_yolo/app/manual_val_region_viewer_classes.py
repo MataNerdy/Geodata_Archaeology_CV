@@ -15,6 +15,7 @@ SUMMARY_PATH = REVIEW_DIR / "region_summary.csv"
 DECISIONS_PATH = REVIEW_DIR / "manual_val_regions.csv"
 AUDIT_DECISIONS_PATH = ROOT / "manual_audit" / "audit_decisions.csv"
 TARGET_CLASSES = ["gorodishcha", "fortifikatsii", "arkhitektury"]
+MODALITIES = ["Li"]
 CLASS_ID_TO_NAME = {
     0: "kurgany_tselye",
     1: "kurgany_povrezhdennye",
@@ -59,6 +60,7 @@ def load_metadata(dataset_dir: Path, audit_decisions_path: Path) -> pd.DataFrame
     df["is_positive"] = df["is_positive"].astype(bool)
     if "source_class_name" not in df.columns:
         df["source_class_name"] = df["class_name"]
+    df = df[df["modality"].astype(str).isin(MODALITIES)].copy()
     name_col = "source_image_name" if "source_image_name" in df.columns else "image_name"
     df["image_id"] = df.apply(lambda row: f"{row['split']}_{Path(str(row.get(name_col) or row['image'])).stem}", axis=1)
     decisions = pd.read_csv(audit_decisions_path).fillna("")
@@ -199,7 +201,8 @@ def fmt_region(row: pd.Series) -> str:
     return f"{row['region']} | {decision} | img={row['images_total']} pos={row['positive_images']} bbox={row['bbox_total']}"
 
 
-st.title("Curated Validation Region Viewer: Gorodishcha / Fortifikatsii / Arkhitektury")
+st.title("Curated Validation Region Viewer: Li Other Classes")
+st.caption("Target classes: gorodishcha / fortifikatsii / arkhitektury. Modality filter: Li only.")
 
 if not SUMMARY_PATH.exists():
     st.error(f"Missing region summary: {SUMMARY_PATH}")
@@ -332,5 +335,6 @@ else:
 
 st.divider()
 st.caption(f"Dataset: {DATASET_DIR}")
+st.caption(f"Modalities: {', '.join(MODALITIES)}")
 st.caption(f"Region summary: {SUMMARY_PATH}")
 st.caption(f"Manual decisions: {DECISIONS_PATH}")
