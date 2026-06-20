@@ -312,6 +312,7 @@ patience = 25
 | v3g manual-clean baseline | `runs/yolo_v3g_manual_keep_20260617_181819` | manual keep-only Li medium, new split | YOLOv8n | 640 | 49 | 0.52174 | 0.20354 | 0.20386 | 0.08053 | Ручная чистка дала более честный clean baseline, но не подняла detection mAP. |
 | v3h curated validation | `runs/yolo_v3h_curated_val_20260618_131256` | manual-clean dataset with curated region validation | YOLOv8n | 640 | 60 | 0.42761 | 0.24107 | 0.27114 | 0.12092 | Curated validation поднял mAP относительно v3g, но выявил сильный региональный bottleneck. |
 | v3h no-Saratov sanity check | `runs/yolo_v3h_no_saratov_20260618_163640` | same v3h dataset, `028_САРАТОВ` moved from val to train | YOLOv8n | 640 | 82 | 0.68752 | 0.40909 | 0.46433 | 0.20339 | Удаление Саратова из val резко улучшило метрики, но validation стал маленьким и менее сбалансированным. |
+| v3i merged archaeological object | `runs/yolo_v3i_archaeological_object_20260618_221705` | Li-only merged one-class `archaeological_object` dataset | YOLOv8n | 640 | 87 | 0.65580 | 0.32407 | 0.35723 | 0.10604 | Расширение класса до всех археологических объектов не превзошло kurgan-only v3h/no-Saratov, но оказалось полезным для proposal-mode анализа. |
 
 Короткая интерпретация этой истории:
 
@@ -321,6 +322,7 @@ patience = 25
 - ручная чистка v3g убрала заведомо плохие tiles и дала более надежный validation split, но метрики стали ниже: это сигнал, что прежний v3b частично выигрывал от особенностей старого split/датасета, а не только от лучшего обобщения.
 - curated split v3h показал, что качество сильно зависит от состава validation regions; регион `028_САРАТОВ` оказался главным источником false negatives.
 - no-Saratov run полезен как diagnostic/sanity check, но не должен автоматически считаться финальным baseline: validation уменьшается до 31 images / 27 positive / 66 bbox и становится перекошенной в сторону `kurgany_povrezhdennye`.
+- v3i проверил альтернативную постановку `archaeological_object`: один класс вместо узкого `kurgan`. Стандартные detection-метрики оказались ниже, чем у kurgan-only no-Saratov, но threshold sweep показал высокий потенциал low-confidence proposal generation.
 
 ### Inference-only и proposal mode
 
@@ -428,6 +430,118 @@ Threshold sweep для no-Saratov показывает, что значител�
 
 Вывод: `028_САРАТОВ` нужно анализировать отдельно как hard validation region или потенциально отдельный domain slice. На текущем этапе no-Saratov run доказывает, что модель может показывать заметно лучшую детекцию на более стабильных регионах, но финальный baseline должен оцениваться на validation split, где Саратов либо явно представлен как сложный регион, либо вынесен в отдельный stress-test.
 
+### v3i: merged archaeological-object experiment
+
+Следующая проверка была связана с другой гипотезой: возможно, bottleneck связан не только с качеством данных, но и со слишком узким определением positive-класса. Для этого был собран merged one-class dataset:
+
+```text
+dataset_yolo_bbox_v3i_li_archaeological_object_merged
+```
+
+В один YOLO-класс `0: archaeological_object` были сведены исходные классы:
+
+- `kurgany_tselye`
+- `kurgany_povrezhdennye`
+- `gorodishcha`
+- `fortifikatsii`
+- `arkhitektury`
+
+Фактически в Li-only split представлены курганы, городища и фортификации; `arkhitektury` в текущем датасете не дали bbox.
+
+Состав v3i:
+
+| Split | Images | Positive images | Negative images | BBox |
+|---|---:|---:|---:|---:|
+| train | 408 | 237 | 171 | 1069 |
+| val | 68 | 48 | 20 | 108 |
+
+Validation regions:
+
+```text
+004_ДЕМИДОВКА
+005_ЛУБНО
+006_МОСКОВИТЫ
+011_РУНА
+012_ЛИХУША
+013_БЕРВЕНЕЦ
+025_ШУМГОРА
+037_КЧР
+```
+
+Leakage check: `region = 0`, `source_id = 0`, `raster_file = 0`.
+
+Распределение bbox по исходным классам:
+
+| Split | Source class | BBox |
+|---|---|---:|
+| train | `fortifikatsii` | 414 |
+| train | `gorodishcha` | 54 |
+| train | `kurgany_povrezhdennye` | 335 |
+| train | `kurgany_tselye` | 266 |
+| val | `fortifikatsii` | 47 |
+| val | `gorodishcha` | 13 |
+| val | `kurgany_povrezhdennye` | 28 |
+| val | `kurgany_tselye` | 20 |
+
+Обучение:
+
+```text
+model = yolov8n.pt
+imgsz = 640
+epochs = 300
+batch = 16
+seed = 42
+single_cls = True
+close_mosaic = 10
+patience = 100
+```
+
+Фактический `results.csv` содержит 136 эпох: обучение было запущено с лимитом `epochs = 300`, но остановилось раньше. Лучший `mAP50` достигнут на эпохе 87.
+
+| Dataset | Model | imgsz | Best epoch | Precision | Recall | mAP50 | mAP50-95 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `v3i_archaeological_object` | YOLOv8n | 640 | 87 | 0.65580 | 0.32407 | 0.35723 | 0.10604 |
+
+Сравнение с ближайшим kurgan-only sanity check:
+
+| Dataset | Target | Precision | Recall | mAP50 | mAP50-95 |
+|---|---|---:|---:|---:|---:|
+| `v3h_no_saratov` | `kurgan` | 0.68752 | 0.40909 | 0.46433 | 0.20339 |
+| `v3i_archaeological_object` | `archaeological_object` | 0.65580 | 0.32407 | 0.35723 | 0.10604 |
+
+Вывод по стандартным detection-метрикам: простое расширение класса с `kurgan` до `archaeological_object` не улучшило baseline. Широкий класс добавил данных, но добавил и внутриклассовую неоднородность: округлые курганы, площадные городища и линейные фортификации имеют разные визуальные паттерны.
+
+При этом corrected threshold sweep показал, что v3i интересен как proposal generator:
+
+| Confidence | TP | FP | FN | Precision | Recall | Coverage@IoU0.3 | Predictions |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.50 | 13 | 0 | 95 | 1.000 | 0.120 | 0.120 | 13 |
+| 0.25 | 26 | 7 | 82 | 0.788 | 0.241 | 0.250 | 33 |
+| 0.10 | 40 | 63 | 68 | 0.388 | 0.370 | 0.444 | 103 |
+| 0.05 | 55 | 174 | 53 | 0.240 | 0.509 | 0.639 | 229 |
+| 0.03 | 58 | 313 | 50 | 0.156 | 0.537 | 0.685 | 371 |
+| 0.01 | 71 | 918 | 37 | 0.072 | 0.657 | 0.778 | 989 |
+| 0.005 | 77 | 1745 | 31 | 0.042 | 0.713 | 0.824 | 1822 |
+| 0.003 | 80 | 2718 | 28 | 0.029 | 0.741 | 0.861 | 2798 |
+| 0.001 | 83 | 6643 | 25 | 0.012 | 0.769 | 0.926 | 6726 |
+
+Интерпретация: как финальный detector v3i слабоват, но как первый этап `YOLO proposals -> crop -> segmentation/refinement` он может быть полезен. При `conf = 0.05-0.01` резко растет coverage, но вместе с ним растет и число false positives. Это делает v3i скорее proposal-моделью, чем финальной моделью детекции.
+
+Региональный аудит при `conf = 0.25`:
+
+| Region | GT | TP | FN | Recall | Основные классы |
+|---|---:|---:|---:|---:|---|
+| `004_ДЕМИДОВКА` | 3 | 0 | 3 | 0.000 | `gorodishcha` |
+| `005_ЛУБНО` | 27 | 1 | 26 | 0.037 | `fortifikatsii; gorodishcha` |
+| `037_КЧР` | 12 | 1 | 11 | 0.083 | `kurgany_povrezhdennye` |
+| `006_МОСКОВИТЫ` | 22 | 3 | 19 | 0.136 | `fortifikatsii` |
+| `025_ШУМГОРА` | 18 | 4 | 14 | 0.222 | `gorodishcha; kurgany_povrezhdennye; kurgany_tselye` |
+| `012_ЛИХУША` | 12 | 4 | 8 | 0.333 | `gorodishcha; kurgany_tselye` |
+| `013_БЕРВЕНЕЦ` | 12 | 11 | 1 | 0.917 | `kurgany_povrezhdennye; kurgany_tselye` |
+| `011_РУНА` | 2 | 2 | 0 | 1.000 | `gorodishcha` |
+
+Самые проблемные регионы для v3i: `005_ЛУБНО`, `006_МОСКОВИТЫ`, `037_КЧР`, `004_ДЕМИДОВКА`. Особенно заметна слабость на фортификациях в `005_ЛУБНО` и `006_МОСКОВИТЫ`.
+
 ## Результаты
 
 В предыдущей серии v2-v5 наиболее полезной версией была v4:
@@ -468,6 +582,8 @@ Confusion matrix подтверждает этот вывод: значител�
 
 Следующий curated split `v3h_li_manual_curated_val` дал `precision = 0.42761`, `recall = 0.24107`, `mAP50 = 0.27114`, `mAP50-95 = 0.12092`. Дополнительный no-Saratov sanity check поднял метрики до `precision = 0.68752`, `recall = 0.40909`, `mAP50 = 0.46433`, `mAP50-95 = 0.20339`, но на меньшей validation выборке. Это главный свежий сигнал: проблема не только в модели, но и в сильной региональной неоднородности данных.
 
+Эксперимент `v3i_archaeological_object` проверил более широкий target-класс. YOLOv8n на merged one-class dataset дал `precision = 0.65580`, `recall = 0.32407`, `mAP50 = 0.35723`, `mAP50-95 = 0.10604`. Это хуже, чем kurgan-only no-Saratov sanity check, поэтому расширение класса само по себе не является решением. Однако low-confidence sweep показал высокое proposal coverage: при `conf = 0.01` покрытие GT на `IoU >= 0.30` достигает `0.778`, а при `conf = 0.003` - `0.861`.
+
 ## Key Findings
 
 - Основной прирост качества достигнут не архитектурой, а переработкой dataset.
@@ -479,6 +595,8 @@ Confusion matrix подтверждает этот вывод: значител�
 - Ручная чистка v3g улучшила доверие к dataset/split, но не решила проблему качества detector.
 - Curated validation v3h выявил региональный bottleneck: `028_САРАТОВ` дает непропорционально много false negatives.
 - No-Saratov sanity check резко повышает метрики, но его нельзя читать как окончательную победу из-за маленького и смещенного validation split.
+- Merged one-class постановка `archaeological_object` не превзошла kurgan-only baseline: широкий класс оказался визуально слишком неоднородным для YOLOv8n на текущем размере датасета.
+- В v3i low-confidence режим дает высокий proposal coverage: `coverage@IoU0.3 = 0.778` при `conf = 0.01` и `0.861` при `conf = 0.003`, но с большим числом false positives.
 - Low-confidence inference может быть полезен как proposal generation, но только вместе с downstream filtering/segmentation.
 - `kurgany_tselye` детектируются лучше, чем `kurgany_povrezhdennye`.
 - Агрессивная чистка повышает precision, но может ухудшить recall.
@@ -517,6 +635,21 @@ runs/yolo_baseline_comparison/
 └── runs/
     ├── v3b_li_medium_yolov8n_img640/
     └── v3d_li_ae_medium_yolov8n_img640/
+
+runs/yolo_v3i_archaeological_object_20260618_221705/
+├── analysis/v3i_archaeological_object_yolov8n_640/
+│   ├── metrics_summary.csv
+│   ├── threshold_sweep.csv
+│   ├── regional_validation_audit_conf_025.csv
+│   └── v3i_archaeological_object_report.md
+└── runs/archaeological_object_detection/
+    ├── v3i_archaeological_object_yolov8n_640/
+    │   ├── results.csv
+    │   ├── results.png
+    │   ├── BoxPR_curve.png
+    │   ├── confusion_matrix.png
+    │   └── weights/best.pt
+    └── v3i_archaeological_object_yolov8n_640_val_best/
 ```
 
 Для GitHub README лучше подготовить curated figures в `reports/figures/`, а не коммитить полные `runs/`.
