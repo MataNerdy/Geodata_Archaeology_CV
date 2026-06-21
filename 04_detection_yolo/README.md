@@ -313,6 +313,7 @@ patience = 25
 | v3h curated validation | `runs/yolo_v3h_curated_val_20260618_131256` | manual-clean dataset with curated region validation | YOLOv8n | 640 | 60 | 0.42761 | 0.24107 | 0.27114 | 0.12092 | Curated validation поднял mAP относительно v3g, но выявил сильный региональный bottleneck. |
 | v3h no-Saratov sanity check | `runs/yolo_v3h_no_saratov_20260618_163640` | same v3h dataset, `028_САРАТОВ` moved from val to train | YOLOv8n | 640 | 82 | 0.68752 | 0.40909 | 0.46433 | 0.20339 | Удаление Саратова из val резко улучшило метрики, но validation стал маленьким и менее сбалансированным. |
 | v3i merged archaeological object | `runs/yolo_v3i_archaeological_object_20260618_221705` | Li-only merged one-class `archaeological_object` dataset | YOLOv8n | 640 | 87 | 0.65580 | 0.32407 | 0.35723 | 0.10604 | Расширение класса до всех археологических объектов не превзошло kurgan-only v3h/no-Saratov, но оказалось полезным для proposal-mode анализа. |
+| v3i model/imgsz comparison | `runs/yolo_v3i_model_imgsz_comparison_20260620_212713` | same v3i dataset, model/image-size ablation | YOLOv8n / YOLO26n | 640 / 1024 | 87 / 173 / 138 / 141 | best: 0.65580 | best: 0.34259 | best: 0.35723 | best: 0.15516 | `YOLOv8n 640` остался лучшим proposal baseline; `YOLO26n 640` дал лучший mAP50-95, но хуже low-confidence coverage. |
 
 Короткая интерпретация этой истории:
 
@@ -323,6 +324,7 @@ patience = 25
 - curated split v3h показал, что качество сильно зависит от состава validation regions; регион `028_САРАТОВ` оказался главным источником false negatives.
 - no-Saratov run полезен как diagnostic/sanity check, но не должен автоматически считаться финальным baseline: validation уменьшается до 31 images / 27 positive / 66 bbox и становится перекошенной в сторону `kurgany_povrezhdennye`.
 - v3i проверил альтернативную постановку `archaeological_object`: один класс вместо узкого `kurgan`. Стандартные detection-метрики оказались ниже, чем у kurgan-only no-Saratov, но threshold sweep показал высокий потенциал low-confidence proposal generation.
+- Последующее сравнение `YOLOv8n`/`YOLO26n` и `imgsz = 640/1024` на v3i не подтвердило пользу `1024`: большие изображения визуально дают много правдоподобных candidate objects, но по текущей GT-разметке резко увеличивают число false positives.
 
 ### Inference-only и proposal mode
 
@@ -542,6 +544,63 @@ patience = 100
 
 Самые проблемные регионы для v3i: `005_ЛУБНО`, `006_МОСКОВИТЫ`, `037_КЧР`, `004_ДЕМИДОВКА`. Особенно заметна слабость на фортификациях в `005_ЛУБНО` и `006_МОСКОВИТЫ`.
 
+### v3i model and image-size comparison
+
+После базового v3i-run была проведена controlled ablation серия на том же dataset:
+
+```text
+dataset_yolo_bbox_v3i_li_archaeological_object_merged
+```
+
+Сравнивались четыре конфигурации:
+
+- `YOLOv8n`, `imgsz = 640`
+- `YOLOv8n`, `imgsz = 1024`
+- `YOLO26n`, `imgsz = 640`
+- `YOLO26n`, `imgsz = 1024`
+
+Общие параметры:
+
+```text
+epochs = 300
+patience = 100
+batch = 16
+seed = 42
+single_cls = True
+close_mosaic = 10
+```
+
+Результаты:
+
+| Experiment | Model | imgsz | Epochs completed | Best epoch | Precision | Recall | mAP50 | mAP50-95 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `v3i_yolov8n_img640` | YOLOv8n | 640 | 136 | 87 | 0.65580 | 0.32407 | 0.35723 | 0.10604 |
+| `v3i_yolo26n_img640` | YOLO26n | 640 | 208 | 173 | 0.59923 | 0.34259 | 0.35024 | 0.15516 |
+| `v3i_yolo26n_img1024` | YOLO26n | 1024 | 300 | 138 | 0.61251 | 0.26350 | 0.27636 | 0.11370 |
+| `v3i_yolov8n_img1024` | YOLOv8n | 1024 | 258 | 141 | 0.58746 | 0.24074 | 0.27572 | 0.09563 |
+
+Интерпретация:
+
+- `YOLOv8n 640` остается лучшим вариантом по `mAP50` и самым полезным как proposal baseline.
+- `YOLO26n 640` дает лучший `mAP50-95`, то есть немного лучше по строгой локализации, но не выигрывает по `mAP50`.
+- `imgsz = 1024` не дал прироста ни для YOLOv8n, ни для YOLO26n.
+- Визуально `YOLOv8n 1024` генерирует много теоретически подходящих археологических candidates, но по текущей разметке это превращается в большое число false positives.
+
+Proposal-mode сравнение подтверждает это:
+
+| Experiment | conf | TP | FP | FN | Precision | Recall | Coverage@IoU0.3 | Predictions |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `v3i_yolov8n_img640` | 0.05 | 55 | 174 | 53 | 0.240 | 0.509 | 0.639 | 229 |
+| `v3i_yolov8n_img640` | 0.01 | 71 | 918 | 37 | 0.072 | 0.657 | 0.778 | 989 |
+| `v3i_yolov8n_img1024` | 0.05 | 40 | 272 | 68 | 0.128 | 0.370 | 0.500 | 312 |
+| `v3i_yolov8n_img1024` | 0.01 | 53 | 812 | 55 | 0.061 | 0.491 | 0.593 | 865 |
+| `v3i_yolo26n_img640` | 0.05 | 40 | 99 | 68 | 0.288 | 0.370 | 0.398 | 139 |
+| `v3i_yolo26n_img640` | 0.01 | 50 | 503 | 58 | 0.090 | 0.463 | 0.528 | 553 |
+| `v3i_yolo26n_img1024` | 0.05 | 28 | 56 | 80 | 0.333 | 0.259 | 0.315 | 84 |
+| `v3i_yolo26n_img1024` | 0.01 | 36 | 217 | 72 | 0.142 | 0.333 | 0.454 | 253 |
+
+Практический вывод: если v3i использовать как первый этап `YOLO proposals -> crop -> segmentation/refinement`, наиболее полезная конфигурация сейчас `YOLOv8n 640` с low-confidence inference. `conf = 0.05` дает более управляемый поток candidates, `conf = 0.01` дает высокий coverage, но требует сильного downstream-фильтра.
+
 ## Результаты
 
 В предыдущей серии v2-v5 наиболее полезной версией была v4:
@@ -584,6 +643,8 @@ Confusion matrix подтверждает этот вывод: значител�
 
 Эксперимент `v3i_archaeological_object` проверил более широкий target-класс. YOLOv8n на merged one-class dataset дал `precision = 0.65580`, `recall = 0.32407`, `mAP50 = 0.35723`, `mAP50-95 = 0.10604`. Это хуже, чем kurgan-only no-Saratov sanity check, поэтому расширение класса само по себе не является решением. Однако low-confidence sweep показал высокое proposal coverage: при `conf = 0.01` покрытие GT на `IoU >= 0.30` достигает `0.778`, а при `conf = 0.003` - `0.861`.
 
+Дополнительное сравнение `YOLOv8n` и `YOLO26n` на v3i показало, что `YOLO26n 640` улучшает `mAP50-95` до `0.15516`, но не превосходит `YOLOv8n 640` по `mAP50` и proposal coverage. Увеличение `imgsz` до `1024` ухудшило стандартные метрики для обеих архитектур. Поэтому текущая рабочая конфигурация для proposal-mode остается `YOLOv8n + imgsz = 640`.
+
 ## Key Findings
 
 - Основной прирост качества достигнут не архитектурой, а переработкой dataset.
@@ -597,6 +658,8 @@ Confusion matrix подтверждает этот вывод: значител�
 - No-Saratov sanity check резко повышает метрики, но его нельзя читать как окончательную победу из-за маленького и смещенного validation split.
 - Merged one-class постановка `archaeological_object` не превзошла kurgan-only baseline: широкий класс оказался визуально слишком неоднородным для YOLOv8n на текущем размере датасета.
 - В v3i low-confidence режим дает высокий proposal coverage: `coverage@IoU0.3 = 0.778` при `conf = 0.01` и `0.861` при `conf = 0.003`, но с большим числом false positives.
+- В v3i model/imgsz comparison `YOLO26n 640` улучшил строгую локализацию (`mAP50-95 = 0.15516`), но `YOLOv8n 640` остался лучше как practical proposal baseline.
+- `imgsz = 1024` на v3i визуально находит много похожих объектов-кандидатов, но по GT-разметке это проявляется как FP-heavy режим, а не как улучшение detector quality.
 - Low-confidence inference может быть полезен как proposal generation, но только вместе с downstream filtering/segmentation.
 - `kurgany_tselye` детектируются лучше, чем `kurgany_povrezhdennye`.
 - Агрессивная чистка повышает precision, но может ухудшить recall.
