@@ -601,6 +601,61 @@ Proposal-mode сравнение подтверждает это:
 
 Практический вывод: если v3i использовать как первый этап `YOLO proposals -> crop -> segmentation/refinement`, наиболее полезная конфигурация сейчас `YOLOv8n 640` с low-confidence inference. `conf = 0.05` дает более управляемый поток candidates, `conf = 0.01` дает высокий coverage, но требует сильного downstream-фильтра.
 
+### v3i low-confidence validation review
+
+Чтобы проверить proposal-mode не только по метрикам, но и глазами, весь validation split `v3i` был прогнан через `YOLOv8n 640 best.pt` с низкими confidence thresholds.
+
+Артефакты:
+
+```text
+runs/v3i_yolov8n640_low_conf_val_review_outputs/
+├── analysis/
+│   ├── threshold_sweep.csv
+│   ├── per_image_threshold_summary.csv
+│   ├── gallery_conf_0p05.html
+│   ├── gallery_conf_0p03.html
+│   ├── gallery_conf_0p01.html
+│   ├── gallery_conf_0p005.html
+│   ├── contact_sheets_conf_0p05/
+│   ├── contact_sheets_conf_0p03/
+│   ├── contact_sheets_conf_0p01/
+│   └── contact_sheets_conf_0p005/
+└── weights/
+```
+
+Цветовая маркировка review images:
+
+- green - missed GT;
+- cyan - matched GT / matched prediction;
+- orange - unmatched prediction.
+
+Threshold sweep:
+
+| Confidence | TP | FP | FN | Precision | Recall | F1 | Coverage@IoU0.3 | Predictions | FP/image |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.25 | 26 | 7 | 82 | 0.788 | 0.241 | 0.369 | 0.250 | 33 | 0.10 |
+| 0.10 | 40 | 63 | 68 | 0.388 | 0.370 | 0.379 | 0.444 | 103 | 0.93 |
+| 0.05 | 55 | 174 | 53 | 0.240 | 0.509 | 0.326 | 0.639 | 229 | 2.56 |
+| 0.03 | 58 | 313 | 50 | 0.156 | 0.537 | 0.242 | 0.685 | 371 | 4.60 |
+| 0.01 | 71 | 918 | 37 | 0.072 | 0.657 | 0.129 | 0.778 | 989 | 13.50 |
+| 0.005 | 77 | 1745 | 31 | 0.042 | 0.713 | 0.080 | 0.824 | 1822 | 25.66 |
+| 0.003 | 80 | 2718 | 28 | 0.029 | 0.741 | 0.055 | 0.861 | 2798 | 39.97 |
+| 0.001 | 83 | 6643 | 25 | 0.012 | 0.769 | 0.024 | 0.926 | 6726 | 97.69 |
+
+Визуальный review contact sheets подтвердил количественную картину:
+
+- `conf = 0.05` - лучший режим для ручной ревизии: модель находит много валидных candidates, но поток FP еще можно просматривать глазами;
+- `conf = 0.03` - компромиссный aggressive review mode: coverage немного выше, но FP уже заметно мешают;
+- `conf = 0.01` - почти режим разведки: модель покрывает больше объектов, но на большинстве сложных tiles появляется плотная сетка orange predictions;
+- `conf <= 0.005` - diagnostic mode, полезный для понимания того, что модель вообще считает похожим на объект, но непрактичный без сильного downstream-фильтра.
+
+Top FP-heavy images показывают, что ложные срабатывания концентрируются в регионах `005_ЛУБНО`, `006_МОСКОВИТЫ`, `004_ДЕМИДОВКА`, `011_РУНА` и `013_БЕРВЕНЕЦ`. На этих tiles модель часто реагирует на крупные рельефные формы, края склонов, тени, линейные структуры и площадные морфологические паттерны. Bbox overlay визуально корректный: проблема не в сдвиге координат, а в том, что low-confidence detector широко размечает геоморфологически похожие объекты.
+
+Практический вывод: `YOLOv8n 640` действительно может работать как proposal generator, но не как самостоятельный high-quality detector. Рабочий диапазон для следующего этапа:
+
+- `conf = 0.05`, если нужен ограниченный поток кандидатов для ручной проверки или слабого downstream-фильтра;
+- `conf = 0.01`, если цель - максимальное покрытие и дальше есть сильный segmentation/refinement stage.
+
 ## Результаты
 
 В предыдущей серии v2-v5 наиболее полезной версией была v4:
@@ -645,6 +700,8 @@ Confusion matrix подтверждает этот вывод: значител�
 
 Дополнительное сравнение `YOLOv8n` и `YOLO26n` на v3i показало, что `YOLO26n 640` улучшает `mAP50-95` до `0.15516`, но не превосходит `YOLOv8n 640` по `mAP50` и proposal coverage. Увеличение `imgsz` до `1024` ухудшило стандартные метрики для обеих архитектур. Поэтому текущая рабочая конфигурация для proposal-mode остается `YOLOv8n + imgsz = 640`.
 
+Полный визуальный review validation split для `YOLOv8n 640` подтвердил, что модель не просто "молчит": при снижении threshold она генерирует большое число археологически похожих candidates. Оптимальный практический режим сейчас - `conf = 0.05`: `coverage@IoU0.3 = 0.639`, `recall = 0.509`, примерно `2.56 FP/image`. `conf = 0.01` повышает coverage до `0.778`, но дает около `13.5 FP/image`, поэтому годится скорее для aggressive proposal mining, чем для финальной детекции.
+
 ## Key Findings
 
 - Основной прирост качества достигнут не архитектурой, а переработкой dataset.
@@ -660,6 +717,7 @@ Confusion matrix подтверждает этот вывод: значител�
 - В v3i low-confidence режим дает высокий proposal coverage: `coverage@IoU0.3 = 0.778` при `conf = 0.01` и `0.861` при `conf = 0.003`, но с большим числом false positives.
 - В v3i model/imgsz comparison `YOLO26n 640` улучшил строгую локализацию (`mAP50-95 = 0.15516`), но `YOLOv8n 640` остался лучше как practical proposal baseline.
 - `imgsz = 1024` на v3i визуально находит много похожих объектов-кандидатов, но по GT-разметке это проявляется как FP-heavy режим, а не как улучшение detector quality.
+- Full validation low-confidence review подтвердил рабочий диапазон для proposal generation: `conf = 0.05` как управляемый режим, `conf = 0.01` как aggressive mining mode.
 - Low-confidence inference может быть полезен как proposal generation, но только вместе с downstream filtering/segmentation.
 - `kurgany_tselye` детектируются лучше, чем `kurgany_povrezhdennye`.
 - Агрессивная чистка повышает precision, но может ухудшить recall.
@@ -713,6 +771,16 @@ runs/yolo_v3i_archaeological_object_20260618_221705/
     │   ├── confusion_matrix.png
     │   └── weights/best.pt
     └── v3i_archaeological_object_yolov8n_640_val_best/
+
+runs/v3i_yolov8n640_low_conf_val_review_outputs/
+├── analysis/
+│   ├── threshold_sweep.csv
+│   ├── per_image_threshold_summary.csv
+│   ├── gallery_conf_0p05.html
+│   ├── gallery_conf_0p03.html
+│   ├── gallery_conf_0p01.html
+│   ├── gallery_conf_0p005.html
+│   └── contact_sheets_conf_*/
 ```
 
 Для GitHub README лучше подготовить curated figures в `reports/figures/`, а не коммитить полные `runs/`.
@@ -869,6 +937,35 @@ Colab notebook использует те же идеи, но сохраняет 
 ```
 
 Папка `skripts/` пока сохранена без удаления как historical layer. Новые experiments should use `configs/`, `src/`, `scripts/` and `app/`.
+
+## Текущее состояние проекта
+
+На текущем этапе проект уже прошел путь от сырого YOLO bbox baseline к аккуратной experimental framework:
+
+- собран и проаудирован исходный 5-class YOLO bbox dataset;
+- проведены ablation-серии по модальностям, фильтрам, negative sampling и ручной чистке;
+- сделан manual audit tool и clean dataset generation;
+- проверены region-aware и curated validation splits;
+- отдельно изучены `Li-only`, `Li + Ae`, `train Li+Ae -> val Li`, kurgan-only и merged `archaeological_object` постановки;
+- проверены `YOLOv8n`, `YOLOv8s`, `YOLO26n`, `imgsz = 640/1024`, longer training и low-confidence inference.
+
+Текущая инженерная оценка:
+
+- как финальный detector YOLO пока недостаточно надежен: стандартный recall остается низким, а merged `archaeological_object` target добавляет внутриклассовую неоднородность;
+- как proposal generator YOLO уже полезен: `YOLOv8n 640` при low confidence покрывает значительную часть GT и визуально находит много археологически правдоподобных candidates;
+- `conf = 0.05` выглядит как лучший практический режим для ручной проверки и умеренного candidate generation;
+- `conf = 0.01` полезен для aggressive mining, но требует сильного downstream-фильтра из-за большого FP потока;
+- следующий качественный скачок, скорее всего, лежит не в новой YOLO-архитектуре, а в связке `YOLO proposals -> crop -> segmentation/refinement` и в доразметке/валидации сложных регионов.
+
+Рекомендуемый следующий шаг:
+
+```text
+1. Зафиксировать YOLOv8n 640 + conf=0.05 как candidate proposal baseline.
+2. Сформировать crop dataset из TP/FP/FN proposals.
+3. Подключить segmentation/refinement stage для фильтрации candidates.
+4. Отдельно разметить/проверить FP-heavy regions: 005_ЛУБНО, 006_МОСКОВИТЫ, 004_ДЕМИДОВКА, 011_РУНА, 013_БЕРВЕНЕЦ.
+5. Держать conf=0.01 как mining mode для поиска потенциально пропущенных объектов, но не как production inference threshold.
+```
 
 ## Ограничения
 
