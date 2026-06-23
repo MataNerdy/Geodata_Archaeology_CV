@@ -1,0 +1,36 @@
+{
+  "weights": "/Users/Di/Documents/GitHub/My projects/Geodata_Archaeology_CV/04_detection_yolo/runs/yolo_v3i_archaeological_object_20260618_221705/runs/archaeological_object_detection/v3i_archaeological_object_yolov8n_640/weights/best.pt",
+  "dataset_dir": "/Users/Di/Documents/GitHub/My projects/Geodata_Archaeology_CV/datasets/dataset_yolo_bbox_v3i_li_archaeological_object_merged",
+  "images_dir": "/Users/Di/Documents/GitHub/My projects/Geodata_Archaeology_CV/datasets/dataset_yolo_bbox_v3i_li_archaeological_object_merged/images/val",
+  "split": "val",
+  "conf": 0.05,
+  "nms_iou": 0.5,
+  "imgsz": 640,
+  "padding_factor": 1.5,
+  "images": 68,
+  "total_proposals": 229,
+  "proposals_per_image": 3.3676470588235294,
+  "total_gt": 108,
+  "iou03": {
+    "TP": 67,
+    "FP": 162,
+    "FN": 41,
+    "precision": 0.2925764192139738,
+    "recall": 0.6203703703703703
+  },
+  "iou05": {
+    "TP": 55,
+    "FP": 174,
+    "FN": 53,
+    "precision": 0.24017467248908297,
+    "recall": 0.5092592592592593
+  },
+  "coverage_iou03": 0.6388888888888888,
+  "coverage_iou05": 0.5092592592592593,
+  "covered_gt_iou03": 69,
+  "covered_gt_iou05": 55,
+  "fp_per_image_iou03": 2.3823529411764706,
+  "fp_per_image_iou05": 2.5588235294117645,
+  "candidates_per_found_object_iou03": 3.318840579710145,
+  "candidates_csv": "/Users/Di/Documents/GitHub/My projects/Geodata_Archaeology_CV/04_detection_yolo/reports/proposals/v3i_conf005_candidates.csv"
+}

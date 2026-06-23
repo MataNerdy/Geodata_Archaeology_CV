@@ -1,0 +1,12 @@
+weights: 04_detection_yolo/runs/yolo_v3i_archaeological_object_20260618_221705/runs/archaeological_object_detection/v3i_archaeological_object_yolov8n_640/weights/best.pt
+dataset_yaml: datasets/dataset_yolo_bbox_v3i_li_archaeological_object_merged/dataset.yaml
+dataset_dir: datasets/dataset_yolo_bbox_v3i_li_archaeological_object_merged
+metadata: datasets/dataset_yolo_bbox_v3i_li_archaeological_object_merged/metadata.csv
+split: val
+conf: 0.01
+iou: 0.5
+imgsz: 640
+padding_factor: 1.5
+max_det: 300
+output_dir: 04_detection_yolo/reports/proposals/v3i_conf001
+candidates_csv: 04_detection_yolo/reports/proposals/v3i_conf001_candidates.csv

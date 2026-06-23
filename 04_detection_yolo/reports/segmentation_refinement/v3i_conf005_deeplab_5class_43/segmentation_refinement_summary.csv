@@ -1,0 +1,4 @@
+metric,value
+proposals,229
+covered_gt_iou03,67
+fp_iou03,149

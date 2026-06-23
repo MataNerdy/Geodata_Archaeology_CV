@@ -1,0 +1,14 @@
+candidates_csv: reports/proposals/v3i_conf005/filter_audit/candidate_features.csv
+checkpoint: ../03_multiclass_segmentation_deeplab/runs/kaggle/collect_models/all/deeplab_5class_43_best.pth
+segmentation_root: ../03_multiclass_segmentation_deeplab
+output_dir: reports/segmentation_refinement/v3i_conf005_deeplab_5class_43
+task: archaeology_5class
+encoder: resnet34
+image_size: 256
+mask_threshold: 0.5
+total_gt: 108
+baseline_covered_gt_iou03: 69
+baseline_images: 68
+device:
+max_candidates:
+dry_run: false
