@@ -28,6 +28,13 @@ runs/**/history.csv
 04_detection_yolo/reports/dataset_ablation/**/train_labels_page_*.jpg
 04_detection_yolo/reports/dataset_ablation/**/val_labels_page_*.jpg
 04_detection_yolo/reports/threshold_sweep*/
+04_detection_yolo/reports/proposals/**/crops/
+04_detection_yolo/reports/proposals/**/overlays/
+!04_detection_yolo/reports/proposals/sample_v3i_conf005/
+!04_detection_yolo/reports/proposals/sample_v3i_conf005/crops/
+!04_detection_yolo/reports/proposals/sample_v3i_conf005/overlays/
+!04_detection_yolo/reports/proposals/sample_v3i_conf005/crops/*.jpg
+!04_detection_yolo/reports/proposals/sample_v3i_conf005/overlays/*.jpg
 04_detection_yolo/manual_audit/previews/
 04_detection_yolo/manual_val_region_review/*.jpg
 04_detection_yolo/manual_val_region_review_other_classes/*.jpg

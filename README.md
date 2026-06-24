@@ -1,6 +1,6 @@
 # Geodata Archaeology CV
 
-End-to-end computer vision pipeline for archaeological remote sensing: from GeoTIFF + GeoJSON preprocessing to segmentation and detection-ready datasets.
+End-to-end computer vision pipeline for archaeological remote sensing: from GeoTIFF + GeoJSON preprocessing to segmentation, object detection, and proposal-based review.
 
 ## Overview
 
@@ -13,9 +13,10 @@ The pipeline covers:
 - patch and mask dataset generation;
 - binary segmentation baseline;
 - multiclass object-level segmentation;
-- YOLO-ready detection dataset preparation.
+- YOLO object detection experiments;
+- low-confidence proposal generation for expert review.
 
-The project is organized as a progression from raw geodata to ML-ready datasets, then to segmentation models and detection-oriented outputs.
+The project is organized as a progression from raw geodata to ML-ready datasets, then to segmentation models, detection experiments, and proposal-based archaeological review.
 
 ![Model evolution examples](03_multiclass_segmentation_deeplab/assets/readme/model_evolution_examples.png)
 
@@ -27,7 +28,8 @@ flowchart LR
     B --> C["CV dataset generation"]
     C --> D["Binary segmentation baseline"]
     D --> E["Multiclass object-level segmentation"]
-    E --> F["YOLO-ready detection dataset"]
+    E --> F["YOLO object detection"]
+    F --> G["Low-confidence proposals and manual audit"]
 ```
 
 ## Modules
@@ -37,7 +39,7 @@ flowchart LR
 | Geodata preprocessing | [`01_geodata_to_cv`](01_geodata_to_cv/) | CRS alignment, overlay validation, dataset generation | segmentation masks, YOLO-ready bbox data |
 | Binary segmentation | [`02_unet_segmentation`](02_unet_segmentation/) | U-Net baseline for kurgan segmentation | best fg IoU = 0.6789 |
 | Multiclass segmentation | [`03_multiclass_segmentation_deeplab`](03_multiclass_segmentation_deeplab/) | flagship DeepLabV3+ research module | weighted F1 = 0.7457 |
-| Detection dataset | [`04_detection_yolo`](04_detection_yolo/) | YOLO-ready object detection dataset direction | coming soon |
+| Object detection | [`04_detection_yolo`](04_detection_yolo/) | YOLO detection research and proposal generation | coverage@IoU0.3 = 0.639 at conf=0.05 |
 
 ## Key Results
 
@@ -47,10 +49,12 @@ flowchart LR
 - Region-aware validation was required for reliable model comparison.
 - Object-level evaluation revealed errors hidden by pixel IoU.
 - Postprocessing changed the final model ranking.
+- YOLO was limited as a final detector, but useful as a low-confidence proposal generator: 229 proposals on 68 validation images, coverage@IoU0.3 = 0.639 at conf=0.05.
+- Manual audit of YOLO proposals showed that many formal false positives were archaeologically meaningful candidates rather than obvious noise.
 
 ## Tech Stack
 
-Python, PyTorch, DeepLabV3+, U-Net, YOLOv8 dataset format, Rasterio, GeoPandas, Shapely, NumPy, Pandas, Matplotlib.
+Python, PyTorch, DeepLabV3+, U-Net, Ultralytics YOLO, YOLO dataset format, Rasterio, GeoPandas, Shapely, NumPy, Pandas, Matplotlib, Streamlit.
 
 ## Repository Structure
 
@@ -68,4 +72,4 @@ Geodata_Archaeology_CV/
 - [`01_geodata_to_cv`](01_geodata_to_cv/) - geodata preprocessing, CRS alignment, overlay validation and dataset generation.
 - [`02_unet_segmentation`](02_unet_segmentation/) - binary U-Net segmentation baseline for kurgan detection.
 - [`03_multiclass_segmentation_deeplab`](03_multiclass_segmentation_deeplab/) - multiclass DeepLabV3+ research project with region-aware validation and object-level evaluation.
-- [`04_detection_yolo`](04_detection_yolo/) - detection dataset direction and YOLO-ready outputs.
+- [`04_detection_yolo`](04_detection_yolo/) - YOLO object detection research, threshold analysis, proposal generation and manual proposal audit.
