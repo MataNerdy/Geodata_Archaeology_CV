@@ -15,6 +15,26 @@ YOLO ограничен как финальный detector,
 LiDAR tiles -> YOLO detection -> proposal generation -> manual proposal audit
 ```
 
+![Case study: validation image 000444](assets/readme/figure_case_study_000444.png)
+
+Сквозной пример главы - validation image `000444`. Он показывает, как менялась интерпретация модели:
+
+```text
+raw LiDAR -> ground truth -> standard detector -> low-confidence proposals -> manual review
+```
+
+В стандартном detector mode YOLO находит только часть размеченных объектов. При снижении confidence threshold появляются дополнительные археологически правдоподобные кандидаты. Ручная проверка показывает, что часть формальных false positives не является очевидным мусором, поэтому итоговая роль модели в этой главе - proposal generator для экспертного review, а не автономный final detector.
+
+Источники панелей figure:
+
+| Panel | Source |
+|---|---|
+| A. Raw LiDAR | `datasets/dataset_yolo_bbox_v3i_li_archaeological_object_merged/images/val/000444.png` |
+| B. Ground truth | `datasets/dataset_yolo_bbox_v3i_li_archaeological_object_merged/labels/val/000444.txt` |
+| C. Standard detector | `runs/yolo_v3i_archaeological_object_20260618_221705/analysis/v3i_archaeological_object_yolov8n_640/predictions_all_conf.csv` |
+| D. Low-confidence proposals | `reports/proposals/v3i_conf005/predictions.csv` |
+| E. Manual review | `reports/refinement_manual_review.csv` and `reports/proposals/v3i_conf005/crops/000444_p*.jpg` |
+
 ## Problem
 
 Задача - находить археологические объекты на LiDAR-изображениях с помощью bounding boxes.
@@ -82,6 +102,12 @@ Leakage check:
 | source_id | 0 |
 | raster_file | 0 |
 
+Validation image `000444` используется дальше как сквозной пример. В исходном LiDAR tile видны несколько выраженных объектов и много близких по форме рельефных структур. Ground-truth bbox фиксируют размеченную часть сцены.
+
+![Raw LiDAR tile 000444](assets/readme/figure_000444_raw_lidar.png)
+
+![Ground-truth annotations for 000444](assets/readme/figure_000444_ground_truth.png)
+
 ## Research Questions
 
 В модуле проверялись несколько практических гипотез:
@@ -128,6 +154,10 @@ Leakage check:
 
 Detector пока недостаточно надежен для полностью автоматического археологического картирования. Recall остается низким, а качество validation сильно зависит от состава регионов.
 
+На примере `000444` стандартный detector threshold показывает главную проблему: модель находит часть размеченных объектов, но не покрывает всю сцену.
+
+![Standard detector mode on 000444](assets/readme/figure_000444_standard_detector.png)
+
 ### Model and Image-Size Ablation on v3i
 
 | Experiment | Model | imgsz | Best epoch | Precision | Recall | mAP50 | mAP50-95 |
@@ -161,6 +191,10 @@ Low-confidence inference меняет роль YOLO. Вместо вопроса
 | 0.01 | 989 | 14.54 | 71 | 918 | 37 | 0.657 | 0.778 | 0.657 | 13.50 | Aggressive mining mode, слишком шумный для прямого review. |
 
 `conf=0.05` - текущая лучшая рабочая точка: модель покрывает много GT objects, но поток candidates еще достаточно мал для визуального аудита.
+
+На том же `000444` low-confidence режим меняет интерпретацию результата: вместо небольшого набора строгих detections появляется управляемый набор candidates для экспертной проверки.
+
+![Low-confidence proposals on 000444](assets/readme/figure_000444_low_conf_proposals.png)
 
 ## Failure Analysis
 
@@ -273,6 +307,10 @@ max_iou_with_gt < 0.3
 
 Большинство формальных false positives вручную классифицированы как археологические объекты или археологически правдоподобные структуры.
 
+Для `000444` ручной audit особенно показателен: среди low-confidence proposals есть не только matched objects, но и additional objects, которые формально не совпадают с GT, однако выглядят археологически осмысленно.
+
+![Manual review of 000444 proposal crops](assets/readme/figure_000444_manual_review.png)
+
 Это означает, что стандартные detection metrics недооценивают практическую полезность proposal generator. Многие "false positives" не обязательно являются ошибками модели: это могут быть недоразмеченные объекты, неоднозначные археологические структуры или признаки вне текущего GT definition.
 
 ## Proposal Filtering
@@ -335,6 +373,10 @@ LiDAR -> YOLO proposal generation -> human review
 ```text
 04_detection_yolo/
 ├── README.md
+├── assets/
+│   └── readme/
+│       ├── figure_case_study_000444.png
+│       └── figure_000444_*.png
 ├── configs/
 │   ├── generate_proposals_v3i_conf005.yaml
 │   ├── generate_proposals_v3i_conf001.yaml
