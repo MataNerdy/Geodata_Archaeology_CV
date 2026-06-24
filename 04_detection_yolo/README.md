@@ -2,14 +2,14 @@
 
 Этот модуль исследует object detection для археологических объектов на LiDAR-derived raster tiles.
 
-Главный результат этой главы - не высокий mAP. Главный результат - практический вывод:
+В этой серии экспериментов высокий mAP получить не удалось. Зато стало понятно, где YOLO оказался полезен:
 
 ```text
 YOLO ограничен как финальный detector,
 но полезен как low-confidence proposal generator для ручной проверки.
 ```
 
-Финальная рамка главы:
+Рабочий пайплайн:
 
 ```text
 LiDAR tiles -> YOLO detection -> proposal generation -> manual proposal audit
@@ -17,13 +17,13 @@ LiDAR tiles -> YOLO detection -> proposal generation -> manual proposal audit
 
 ![Case study: validation image 000444](assets/readme/figure_case_study_000444.png)
 
-Сквозной пример главы - validation image `000444`. Он показывает, как менялась интерпретация модели:
+На validation image `000444` удобно проследить всю логику эксперимента:
 
 ```text
 raw LiDAR -> ground truth -> standard detector -> low-confidence proposals -> manual review
 ```
 
-В стандартном detector mode YOLO находит только часть размеченных объектов. При снижении confidence threshold появляются дополнительные археологически правдоподобные кандидаты. Ручная проверка показывает, что часть формальных false positives не является очевидным мусором, поэтому итоговая роль модели в этой главе - proposal generator для экспертного review, а не автономный final detector.
+В стандартном detector mode YOLO находит только часть размеченных объектов. При снижении confidence threshold появляются дополнительные археологически правдоподобные кандидаты. По результатам ручной проверки часть формальных false positives не является очевидным мусором. Поэтому модель лучше рассматривать как proposal generator для экспертного review, а не как автономный final detector.
 
 Источники панелей figure:
 
@@ -102,15 +102,11 @@ Leakage check:
 | source_id | 0 |
 | raster_file | 0 |
 
-Validation image `000444` используется дальше как сквозной пример. В исходном LiDAR tile видны несколько выраженных объектов и много близких по форме рельефных структур. Ground-truth bbox фиксируют размеченную часть сцены.
-
-![Raw LiDAR tile 000444](assets/readme/figure_000444_raw_lidar.png)
-
-![Ground-truth annotations for 000444](assets/readme/figure_000444_ground_truth.png)
+Validation image `000444` используется как сквозной пример в титульной figure: исходный LiDAR tile содержит несколько выраженных объектов и много близких по форме рельефных структур, а ground-truth bbox фиксируют только размеченную часть сцены.
 
 ## Research Questions
 
-В модуле проверялись несколько практических гипотез:
+В ходе работы проверялись несколько практических гипотез:
 
 - может ли YOLO работать как detector археологических объектов на LiDAR;
 - лучше ли чистый Li-only dataset, чем более крупный Li + Ae dataset;
@@ -124,7 +120,7 @@ Validation image `000444` используется дальше как скво�
 
 ## Experiments Overview
 
-Таблица кратко показывает исследовательский путь. Подробные логи сохранены в `reports/` и `runs/`.
+Ниже - краткая сводка экспериментов. Подробные логи сохранены в `reports/` и `runs/`.
 
 | Experiment | Goal | Result | Conclusion |
 |---|---|---|---|
@@ -144,7 +140,7 @@ Validation image `000444` используется дальше как скво�
 
 ### Final Detector Mode
 
-Самый сильный detector-style результат в этой главе - curated no-Saratov kurgan sanity check. Он полезен как диагностическая точка, но validation там маленький и region-sensitive, поэтому его нельзя считать универсальным решением.
+Самый сильный detector-style результат дал curated no-Saratov kurgan sanity check. Это полезная диагностическая точка, но validation там маленький и region-sensitive, поэтому такой результат нельзя считать универсальным решением.
 
 | Dataset | Target | Model | imgsz | Val images | Val bbox | Precision | Recall | mAP50 | mAP50-95 |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|
@@ -152,11 +148,7 @@ Validation image `000444` используется дальше как скво�
 | `v3h_no_saratov` | `kurgan` | YOLOv8n | 640 | 31 | 66 | 0.68752 | 0.40909 | 0.46433 | 0.20339 |
 | `v3i_archaeological_object` | `archaeological_object` | YOLOv8n | 640 | 68 | 108 | 0.65580 | 0.32407 | 0.35723 | 0.10604 |
 
-Detector пока недостаточно надежен для полностью автоматического археологического картирования. Recall остается низким, а качество validation сильно зависит от состава регионов.
-
-На примере `000444` стандартный detector threshold показывает главную проблему: модель находит часть размеченных объектов, но не покрывает всю сцену.
-
-![Standard detector mode on 000444](assets/readme/figure_000444_standard_detector.png)
+Detector пока недостаточно надежен для полностью автоматического археологического картирования. Recall остается низким, а качество validation сильно зависит от состава регионов. На примере `000444` это видно в Panel C титульной figure: стандартный threshold находит часть размеченных объектов, но не покрывает всю сцену.
 
 ### Model and Image-Size Ablation on v3i
 
@@ -179,7 +171,7 @@ model   = YOLOv8n
 imgsz   = 640
 ```
 
-Low-confidence inference меняет роль YOLO. Вместо вопроса "является ли это финальным detector?" появляется более практичный вопрос:
+При low-confidence inference меняется сама роль YOLO. Вместо вопроса "является ли это финальным detector?" возникает более прикладной вопрос:
 
 ```text
 Может ли YOLO создать управляемый список археологически осмысленных кандидатов?
@@ -192,9 +184,7 @@ Low-confidence inference меняет роль YOLO. Вместо вопроса
 
 `conf=0.05` - текущая лучшая рабочая точка: модель покрывает много GT objects, но поток candidates еще достаточно мал для визуального аудита.
 
-На том же `000444` low-confidence режим меняет интерпретацию результата: вместо небольшого набора строгих detections появляется управляемый набор candidates для экспертной проверки.
-
-![Low-confidence proposals on 000444](assets/readme/figure_000444_low_conf_proposals.png)
+На том же `000444` low-confidence режим меняет интерпретацию результата: вместо небольшого набора строгих detections появляется управляемый набор candidates для экспертной проверки. После этого анализ смещается от качества final detector к практической ценности proposal workflow.
 
 ## Failure Analysis
 
@@ -213,25 +203,7 @@ confidence >= 0.25 and IoU >= 0.5
 
 Пропущенные объекты часто меньше найденных, но не только маленькие. FN audit также выявил крупные подозрительные объекты, которые модель должна была бы видеть.
 
-### False Negatives
-
-| FN signal | Count |
-|---|---:|
-| `small_object` | 50 |
-| `large_object` | 38 |
-| `edge_object` | 32 |
-| `dense_cluster` | 25 |
-| `isolated_object` | 11 |
-
-Типы false negatives:
-
-| FN type | Count |
-|---|---:|
-| `metric_miss` | 43 |
-| `hard_miss` | 28 |
-| `near_miss` | 17 |
-
-Это означает, что модель часто генерирует что-то рядом с объектом, но prediction недостаточно хорош для строгого detection matching.
+В false negatives чаще всего встречались признаки `small_object` (`50`), `large_object` (`38`), `edge_object` (`32`), `dense_cluster` (`25`) и `isolated_object` (`11`). По типу ошибки преобладали `metric_miss` (`43`), затем `hard_miss` (`28`) и `near_miss` (`17`). Во многих случаях модель генерирует prediction рядом с объектом, но его недостаточно для строгого detection matching.
 
 ### Region Effects
 
@@ -252,7 +224,7 @@ confidence >= 0.25 and IoU >= 0.5
 | `v3h_li_manual_curated_val` | 212 | 46 | 112 | 0.42761 | 0.24107 | 0.27114 | 0.12092 |
 | `v3h_no_saratov` | 227 | 31 | 66 | 0.68752 | 0.40909 | 0.46433 | 0.20339 |
 
-Это не доказывает, что задача решена. Это показывает, что regional domain shift доминирует validation outcome.
+Этот результат не означает, что задача решена. Скорее это признак сильного влияния regional domain shift на validation outcome.
 
 ### Heterogeneous Morphology
 
@@ -272,7 +244,7 @@ confidence >= 0.25 and IoU >= 0.5
 
 ## Manual Proposal Audit
 
-Самый важный результат главы - ручная проверка всех `229` v3i proposals при `conf=0.05`.
+Отдельно была проведена ручная проверка всех `229` v3i proposals при `conf=0.05`.
 
 Manual labels:
 
@@ -299,7 +271,7 @@ max_iou_with_gt < 0.3
 | `terrain_like + trash` | 43 |
 | `bad_crop` | 3 |
 
-Ключевой вывод:
+Главное наблюдение:
 
 ```text
 Только 43 из 149 формальных false positives оказались явным мусором или terrain-like объектами.
@@ -311,40 +283,18 @@ max_iou_with_gt < 0.3
 
 ![Manual review of 000444 proposal crops](assets/readme/figure_000444_manual_review.png)
 
-Это означает, что стандартные detection metrics недооценивают практическую полезность proposal generator. Многие "false positives" не обязательно являются ошибками модели: это могут быть недоразмеченные объекты, неоднозначные археологические структуры или признаки вне текущего GT definition.
+Стандартные detection metrics в такой постановке занижают практическую полезность proposal generator. Многие "false positives" не обязательно являются ошибками модели: это могут быть недоразмеченные объекты, неоднозначные археологические структуры или признаки вне текущего GT definition.
 
 ## Proposal Filtering
 
-Перед ручным аудитом были проверены простые rule-based filters.
+Перед ручным аудитом были проверены простые rule-based filters. Они могут уменьшить поток candidates, но не решают semantic ambiguity: часть формальных FP археологически осмысленна.
 
-Лучшее универсальное правило:
+| Filter | FP reduction | Covered GT loss | Interpretation |
+|---|---:|---:|---|
+| `bbox_area_norm > 0.1 AND conf < 0.15` | 30.9% | 8.7% | Лучшее универсальное правило. |
+| `region in {025_ШУМГОРА, 004_ДЕМИДОВКА, 011_РУНА} AND conf < 0.1` | 37.6% | 7.2% | Лучшее region-aware правило. |
 
-```text
-bbox_area_norm > 0.1 AND conf < 0.15
-```
-
-Эффект:
-
-| Metric | Value |
-|---|---:|
-| FP reduction | 30.9% |
-| Covered GT loss | 8.7% |
-
-Лучшее region-aware правило:
-
-```text
-region in {025_ШУМГОРА, 004_ДЕМИДОВКА, 011_РУНА}
-AND conf < 0.1
-```
-
-Эффект:
-
-| Metric | Value |
-|---|---:|
-| FP reduction | 37.6% |
-| Covered GT loss | 7.2% |
-
-Эти фильтры полезны для приоритизации review, но недостаточны для решения задачи. Ручной аудит показал почему: многие формальные FP археологически осмысленны.
+Rule-based filtering полезен для приоритизации review, но не заменяет экспертную интерпретацию candidates.
 
 ## Final Conclusions
 
@@ -360,66 +310,37 @@ AND conf < 0.1
 4. Ручной аудит изменил интерпретацию false positives.
    Из `149` формальных FP только `43` оказались явным мусором или terrain-like false positives.
 
-5. Наиболее перспективный сценарий использования этой главы:
+5. Наиболее полезный сценарий использования на этом этапе:
 
 ```text
 LiDAR -> YOLO proposal generation -> human review
 ```
 
-Это осмысленный археологический workflow, даже если модель пока не является надежным автономным detector.
+Такой workflow имеет практический смысл для археологического review, даже если модель пока не является надежным автономным detector.
 
 ## Repository Structure
 
 ```text
 04_detection_yolo/
 ├── README.md
-├── assets/
-│   └── readme/
-│       ├── figure_case_study_000444.png
-│       └── figure_000444_*.png
+├── assets/readme/
 ├── configs/
-│   ├── generate_proposals_v3i_conf005.yaml
-│   ├── generate_proposals_v3i_conf001.yaml
-│   └── ...
 ├── scripts/
-│   ├── build_dataset_ablation.py
-│   ├── build_manual_clean_dataset.py
-│   ├── build_curated_val_dataset.py
-│   ├── generate_yolo_proposals.py
-│   ├── visualize_yolo_labels.py
-│   └── ...
 ├── app/
-│   ├── manual_audit_app.py
-│   ├── manual_val_region_viewer.py
-│   ├── manual_val_region_viewer_classes.py
-│   └── manual_val_region_viewer_merged.py
 ├── notebooks/
-│   ├── geo_li_ae_kurgan_detection.ipynb
-│   ├── kaggle_yolo_v3h_no_saratov.ipynb
-│   └── ...
 ├── reports/
-│   ├── experiments.md
-│   ├── proposal_filtering_v3i.md
-│   ├── proposals_v3i_analysis.md
-│   ├── refinement_manual_review.csv
-│   ├── README_legacy_before_portfolio_rewrite.md
-│   ├── dataset_ablation/
-│   ├── dataset_audit/
-│   ├── proposals/
-│   └── threshold_sweep_v3b/
 ├── runs/
-│   └── local run artifacts, not intended for GitHub tracking
 └── requirements.txt
 ```
 
-Большие датасеты, веса моделей и полные training runs намеренно исключены из Git tracking.
+`configs/` хранит воспроизводимые параметры, `scripts/` - сборку датасетов и proposal generation, `app/` - локальные audit/viewer tools, `reports/` - аналитические выводы и CSV, `assets/readme/` - иллюстрации README. Большие датасеты, веса моделей и полные training runs не входят в Git tracking.
 
 ## Future Work
 
-Оставлено намеренно коротко для этой главы:
+Короткий список направлений, которые логично продолжать отдельно:
 
 - собрать небольшой crop-level refinement classifier на основе manually reviewed proposals;
 - дополнить разметку для `plausible_object` candidates;
 - превратить proposal workflow в human-in-the-loop инструмент для археологического review.
 
-Эти шаги относятся к следующему этапу, а не внутрь этой detection/proposal главы.
+Эти шаги выходят за рамки текущего detection/proposal исследования.
