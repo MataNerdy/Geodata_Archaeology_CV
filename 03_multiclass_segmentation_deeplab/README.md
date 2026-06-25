@@ -1,27 +1,26 @@
 # Segmentation with DeepLabV3+ on Multi-Modal Archaeological Geodata
-## Обзор проекта
 
-Этот модуль `Geodata_Archaeology_CV` посвящен многоклассовой семантической сегментации археологических объектов на данных дистанционного зондирования.
+## Project Overview
 
-Проект оформлен как воспроизводимое ML-исследование.
+This module studies multiclass semantic segmentation of archaeological objects in remote-sensing data.
 
-Каждый этап отвечает на отдельный вопрос:
+The project is structured as a reproducible ML research workflow. Each stage addresses a specific question:
 
-- какие данные наиболее информативны,
-- достаточно ли ResNet34,
-- как зафиксировать честный benchmark,
-- насколько результат зависит от seed,
-- можно ли улучшить извлечение объектов без повторного обучения нейросети.
+- which modalities are most informative;
+- whether ResNet34 is sufficient;
+- how to define a fair benchmark protocol;
+- how much the result depends on random seed;
+- whether object extraction can be improved without retraining the neural network.
 
 ![Representative predictions](assets/predictions/final_resnet34_all_seed_101.png)
 
-Финальная версия проекта — DeepLabV3+ с ResNet34 encoder, модальностями `Li`, `Ae`, `SpOr` и Stage C postprocessing. Подробная конфигурация pipeline и финальные метрики вынесены в отдельные разделы ниже, чтобы не смешивать выбор модели с оценкой результата.
+The final pipeline uses DeepLabV3+ with a ResNet34 encoder, `Li`, `Ae`, and `SpOr` modalities, and Stage C postprocessing. Model selection and final metrics are reported separately to keep architecture choice and object-level evaluation distinct.
 
-## Постановка задачи
+## Problem Statement
 
-Цель проекта — сегментировать пять классов археологических объектов на растровых patches и преобразовать предсказанные маски в отдельные полигоны, пригодные для дальнейшего геоанализа.
+The task is to segment five archaeological foreground classes on raster patches and convert predicted masks into object polygons suitable for downstream geospatial analysis.
 
-| ID | Класс |
+| ID | Class |
 |---:|---|
 | 0 | `background` |
 | 1 | `kurgany_tselye` |
@@ -30,23 +29,19 @@
 | 4 | `fortifikatsii` |
 | 5 | `arkhitektury` |
 
-Это объектная задача.
+This is an object-level task. Pixel IoU is useful for boundary diagnostics, but it does not fully capture practical quality: a coarse but correctly localized polygon can be more useful than a visually neat mask fragment.
 
-Pixel IoU полезен для диагностики границ, но не полностью отражает прикладное качество:
+Model selection therefore uses weighted polygon-level competition F1.
 
-грубый, но правильно локализованный полигон может быть полезнее аккуратного фрагмента маски.
-
-Поэтому для выбора модели используется взвешенный polygon-level competition F1.
-
-| Группа метрик | Назначение |
+| Metric group | Purpose |
 |---|---|
-| Pixel IoU, Dice, pixel accuracy | диагностика сегментации и анализ ошибок |
-| Object precision, recall, F1 | оценка обнаруженных connected components |
-| Weighted competition F1 | основная validation-метрика выбора pipeline |
+| Pixel IoU, Dice, pixel accuracy | segmentation diagnostics and error analysis |
+| Object precision, recall, F1 | connected-component detection quality |
+| Weighted competition F1 | primary validation metric for pipeline selection |
 
-Веса классов на объектном уровне:
+Object-level class weights:
 
-| Класс | Вес |
+| Class | Weight |
 |---|---:|
 | `kurgany_povrezhdennye` | 27.8 |
 | `kurgany_tselye` | 22.2 |
@@ -54,17 +49,15 @@ Pixel IoU полезен для диагностики границ, но не �
 | `arkhitektury` | 11.1 |
 | `fortifikatsii` | 5.6 |
 
+## Stage 1. Dataset Profiling
 
+### Research Question
 
-## Этап 1. Профилирование датасета
+What data is available, how balanced is it, and which modalities contain the clearest archaeological morphology?
 
-### Исследовательский вопрос
+### Data Structure
 
-Какие данные доступны, насколько они сбалансированы и какие модальности содержат наиболее выразительную геометрию археологических объектов?
-
-### Структура данных
-
-Каждый patch хранится как одноканальный `.npy`-массив. Metadata содержит регион, модальность, исходный файл, геометрию crop и статистику по классам. Исходный датасет не публикуется в GitHub.
+Each patch is stored as a single-channel `.npy` array. Metadata contains region, modality, source file, crop geometry, and class statistics. The source dataset is not published in GitHub.
 
 ```text
 segmentation_dataset/
@@ -75,107 +68,106 @@ segmentation_dataset/
     └── 000001.npy
 ```
 
-| Характеристика | Значение |
+| Property | Value |
 |---|---:|
-| Сэмплы | 3260 |
-| Регионы | 109 |
-| Модальности | 4 |
-| Foreground-классы | 5 |
+| Samples | 3260 |
+| Regions | 109 |
+| Modalities | 4 |
+| Foreground classes | 5 |
 
-### Примеры объектов
+### Object Examples
 
-![Примеры объектов датасета](assets/dataset/dataset_examples_collage.png)
+![Dataset object examples](assets/dataset/dataset_examples_collage.png)
 
-### Дисбаланс классов
+### Class Imbalance
 
+![Class imbalance](assets/dataset/class_imbalance.png)
 
-![Дисбаланс классов](assets/dataset/class_imbalance.png)
+Damaged burial mounds dominate the patch dataset. `gorodishcha` and `arkhitektury` are much rarer, so validation design and error analysis are especially important for these classes.
 
-Поврежденные курганы доминируют среди patches. `gorodishcha` и `arkhitektury` представлены значительно реже, поэтому для них особенно важны аккуратная validation-оценка и дальнейший анализ ошибок.
+### Modality Distribution
 
-### Распределение модальностей
-
-| Модальность | Описание | Сэмплы |
+| Modality | Description | Samples |
 |---|---|---:|
-| `Ae` | аэрофотосъемка | 1274 |
-| `SpOr` | спутниковый снимок / ортофотоплан | 976 |
-| `Li` | растр на основе LiDAR | 934 |
-| `Or` | дополнительный ортофотоплан | 76 |
+| `Ae` | aerial imagery | 1274 |
+| `SpOr` | satellite / orthophoto imagery | 976 |
+| `Li` | LiDAR-derived raster | 934 |
+| `Or` | additional orthophoto imagery | 76 |
 
-![Распределение сэмплов по классам и модальностям](assets/dataset/class_modality_heatmap.png)
+![Class and modality heatmap](assets/dataset/class_modality_heatmap.png)
 
-Классы распределены по источникам неравномерно. Например, в сырых metadata нет `Li`-примеров класса `arkhitektury`. Редкая модальность `Or` сохранена в профиле исходного датасета, но итоговый мультимодальный pipeline использует три основные модальности: `Li`, `Ae`, `SpOr`.
+Classes are not evenly distributed across sources. For example, the raw metadata contains no `Li` samples for `arkhitektury`. The rare `Or` modality is retained in the dataset profile, but the final multimodal pipeline uses the three main modalities: `Li`, `Ae`, and `SpOr`.
 
-### Сравнение Li, Ae и SpOr
+### Li, Ae, and SpOr Comparison
 
-![Региональное сравнение модальностей](assets/dataset/modality_comparison.png)
+![Regional modality comparison](assets/dataset/modality_comparison.png)
 
-Коллаж показывает один регион и один основной класс, представленные одновременно в `Li`, `Ae` и `SpOr`. Это региональные примеры, а не гарантированно выровненные по пикселям crops.
+The collage shows one region and one main class represented in `Li`, `Ae`, and `SpOr`. These are regional examples, not guaranteed pixel-aligned crops.
 
-### Вывод этапа
+### Stage Result
 
-**LiDAR содержит наиболее информативную геометрию археологических объектов.** При этом мультимодальные данные необходимо сохранить в исследовании: отдельные классы представлены в источниках неравномерно, а визуальные модальности могут дополнять LiDAR.
+LiDAR contains the clearest geometry for archaeological objects. Multimodal data is still retained because class coverage is uneven across sources and visual modalities can complement LiDAR.
 
-## Этап 2. Сравнение энкодеров и модальностей
+## Stage 2. Encoder and Modality Comparison
 
-### Гипотеза
+### Hypothesis
 
-Более глубокий ResNet50 может улучшить сегментацию, но его преимущество необходимо проверить отдельно для LiDAR и полного набора доступных на этом этапе модальностей.
+A deeper ResNet50 encoder may improve segmentation quality, but the effect has to be tested separately for LiDAR-only and multimodal inputs.
 
-### Эксперимент
+### Experiment
 
-На сырых metadata без дополнительной фильтрации были обучены четыре диагностические модели DeepLabV3+. Во всех запусках использовались image size `256`, batch size `8`, learning rate `1e-3`, CE + Dice loss и одинаковое распределение регионов между train и validation.
+Four diagnostic DeepLabV3+ models were trained on raw metadata without additional filtering. All runs used image size `256`, batch size `8`, learning rate `1e-3`, CE + Dice loss, and the same region allocation between train and validation.
 
-| Эксперимент | Энкодер | Модальности | Best epoch | Mean fg IoU | Pixel accuracy | Object F1 | Weighted competition F1 |
+| Experiment | Encoder | Modalities | Best epoch | Mean fg IoU | Pixel accuracy | Object F1 | Weighted competition F1 |
 |---|---|---|---:|---:|---:|---:|---:|
 | `resnet34_li` | ResNet34 | `Li` | 23 | 0.1510 | 0.5770 | 0.4195 | 0.3421 |
 | `resnet50_li` | ResNet50 | `Li` | 40 | **0.1589** | 0.5943 | 0.6058 | 0.4832 |
-| `resnet34_all` | ResNet34 | все | 45 | **0.1253** | 0.7300 | **0.7790** | **0.6603** |
-| `resnet50_all` | ResNet50 | все | 50 | 0.1028 | **0.7425** | 0.7306 | 0.6299 |
+| `resnet34_all` | ResNet34 | all | 45 | **0.1253** | 0.7300 | **0.7790** | **0.6603** |
+| `resnet50_all` | ResNet50 | all | 50 | 0.1028 | **0.7425** | 0.7306 | 0.6299 |
 
-### Интерпретация
+### Interpretation
 
-На LiDAR ResNet50 дал небольшой прирост mean foreground IoU. На полном наборе модальностей преимущество исчезло: ResNet34 показал более высокий mean foreground IoU, object F1 и Weighted competition F1. Увеличение глубины энкодера не дало устойчивого выигрыша.
+On LiDAR-only data, ResNet50 gave a small mean foreground IoU gain. On all modalities, that advantage disappeared: ResNet34 achieved better mean foreground IoU, object F1, and weighted competition F1. Increasing encoder depth did not provide a stable improvement.
 
-Li-only validation-подмножество не содержит объектов `arkhitektury`, поэтому результаты этой серии нельзя использовать как итоговый benchmark. Их задача — помочь выбрать разумное направление дальнейшего исследования.
+The Li-only validation subset contains no `arkhitektury` objects, so this experiment is diagnostic rather than a final benchmark. Its role is to guide the next research stage.
 
-![Diagnostic confusion matrix ResNet34 на сырых данных и всех модальностях](assets/plots/raw_ablation_resnet34_all_confusion_matrix.png)
+![Diagnostic confusion matrix for raw ResNet34 all-modality run](assets/plots/raw_ablation_resnet34_all_confusion_matrix.png)
 
-Эта confusion matrix относится к diagnostic run на раннем ablation split. Она помогает понять поведение модели, но не является результатом final Stage C pipeline.
+The confusion matrix belongs to an early diagnostic split. It is useful for understanding model behavior, but it is not the final Stage C result.
 
-### Вывод этапа
+### Stage Result
 
-**ResNet34 выбран как основной энкодер проекта:** он показал более стабильный результат на мультимодальных данных и позволил сделать последующее исследование компактным.
+ResNet34 was selected as the main encoder because it behaved more consistently on multimodal data and kept the rest of the study compact.
 
-## Этап 3. Research Split
+## Stage 3. Research Split
 
-### Мотивация
+### Motivation
 
-Диагностические эксперименты помогли выбрать энкодер, но для корректного сравнения следующих моделей потребовалась единая воспроизводимая среда оценки.
+The diagnostic experiments helped choose the encoder, but a fixed validation protocol was needed for reliable model comparison.
 
-Research Split был подготовлен один раз и сохранен как набор CSV-файлов. Сначала к сырым metadata применялась фильтрация, затем выполнялся region-aware поиск validation holdout. Во время обучения фильтрация повторно не запускается: модели используют уже материализованные frozen CSV.
+The Research Split was prepared once and saved as CSV files. Raw metadata is filtered first, then a region-aware validation holdout is selected. Training does not rerun split search; all benchmark models use the frozen CSV files.
 
 ```mermaid
 flowchart LR
-    A["Сырые metadata: 3260 samples"] --> B["Фильтрация metadata"]
-    B --> C["Region-aware поиск holdout"]
+    A["Raw metadata: 3260 samples"] --> B["Metadata filtering"]
+    B --> C["Region-aware holdout search"]
     C --> D["train_split.csv: 2278"]
     C --> E["val_split.csv: 601"]
     D --> F["Frozen benchmark"]
     E --> F
 ```
 
-### Правила протокола
+### Protocol Rules
 
-- train и validation разделены по регионам;
-- регионы не пересекаются между частями split;
-- CSV-файлы фиксируются и переиспользуются;
-- поиск validation-регионов нельзя пересчитывать во время сравнения моделей;
-- model selection и postprocessing выполняются только на validation.
+- train and validation are separated by region;
+- regions do not overlap between split parts;
+- CSV files are fixed and reused;
+- validation-region search is not rerun during model comparison;
+- model selection and postprocessing are performed only on validation.
 
-### Конфигурация
+### Configuration
 
-| Параметр | Значение |
+| Parameter | Value |
 |---|---|
 | Protocol | `archaeology_5class_research_split_v1` |
 | Group column | `region` |
@@ -197,26 +189,26 @@ splits/archaeology_5class_research_split_v1/
 └── split_stats.md
 ```
 
-### Вывод этапа
+### Stage Result
 
-**Research Split создал воспроизводимую исследовательскую среду без утечки регионов.** Все следующие benchmark-запуски сравниваются только внутри этого протокола.
+The Research Split created a reproducible no-region-leakage benchmark. All following benchmark runs are compared only inside this protocol.
 
-## Этап 4. Исследование seed
+## Stage 4. Seed Study
 
-### Гипотеза
+### Hypothesis
 
-Один удачный запуск может быть следствием случайной инициализации. Перед выбором итоговой модели необходимо измерить разброс результатов при разных seeds.
+A single good run may be caused by random initialization. Before choosing the final model, seed variance has to be measured.
 
-### Эксперимент
+### Experiment
 
-Семейство моделей намеренно оставалось узким: DeepLabV3+ ResNet34. На frozen CSV Research Split были обучены две группы моделей с seeds `13`, `21`, `42`, `77`, `101`:
+The model family was kept narrow: DeepLabV3+ with ResNet34. Two groups of models were trained on the frozen Research Split with seeds `13`, `21`, `42`, `77`, and `101`:
 
-- только `Li`;
-- мультимодальные данные `Li`, `Ae`, `SpOr`.
+- `Li` only;
+- multimodal `Li`, `Ae`, `SpOr`.
 
-Всего выполнено `10` сопоставимых benchmark-запусков. Значения ниже рассчитаны **до постпроцессинга**: модели уже обучены на Research Split, но к их предсказаниям еще не применен подобранный postprocessing.
+In total, `10` comparable benchmark runs were trained. The values below are reported before postprocessing.
 
-### Результаты для Li
+### Li Results
 
 | Seed | Best epoch | Weighted competition F1 | Object F1 | Precision | Recall | Mean fg IoU |
 |---:|---:|---:|---:|---:|---:|---:|
@@ -226,7 +218,7 @@ splits/archaeology_5class_research_split_v1/
 | 77 | 28 | 0.6727 | 0.7886 | 0.7527 | **0.8280** | **0.1393** |
 | 101 | 43 | **0.7310** | **0.8276** | **0.8395** | 0.8160 | 0.1391 |
 
-### Результаты для Li, Ae и SpOr
+### Li, Ae, and SpOr Results
 
 | Seed | Best epoch | Weighted competition F1 | Object F1 | Precision | Recall | Mean fg IoU |
 |---:|---:|---:|---:|---:|---:|---:|
@@ -236,135 +228,133 @@ splits/archaeology_5class_research_split_v1/
 | 77 | 36 | 0.6725 | 0.7072 | 0.9490 | 0.5635 | 0.0871 |
 | 101 | 28 | 0.6700 | **0.7480** | 0.9540 | **0.6152** | 0.0859 |
 
-### Интерпретация
+### Interpretation
 
-Разброс результатов заметен в обеих группах. Лучший seed зависит от метрики: например, среди мультимодальных моделей seed `21` лидирует по Weighted competition F1, а seed `101` — по object F1 и recall.
+Both model groups showed noticeable variance. The best seed also depended on the metric: among multimodal models, seed `21` led by weighted competition F1, while seed `101` led by object F1 and recall.
 
-### Вывод этапа
+### Stage Result
 
-**Результат существенно зависит от случайной инициализации.** Выбирать итоговую модель по одному обучению некорректно.
+The result depends substantially on random initialization. Selecting the final model from a single training run would be unreliable.
 
-## Сводная таблица исследования
+## Research Summary Table
 
-Короткая таблица показывает, как менялся лучший Weighted competition F1 на каждом этапе.
+The table shows how the best weighted competition F1 changed across the study.
 
-| Этап | Лучший результат |
+| Stage | Best result |
 |---|---:|
 | Encoder comparison | 0.6603 |
 | Research Split | 0.7310 |
 | Postprocessing sweep | **0.7457** |
 
-Полная таблица из `18` строк с диагностическими моделями, benchmark-запусками и postprocessing pipeline-вариантами вынесена в [`reports/research_summary.md`](reports/research_summary.md).
+The full `18`-row table with diagnostic models, benchmark runs, and postprocessing variants is stored in [`reports/research_summary.md`](reports/research_summary.md).
 
-## Этап 5. Отбор checkpoints
+## Stage 5. Checkpoint Selection
 
-### Цель отбора
+### Selection Goal
 
-После seed study необходимо было выбрать небольшой набор перспективных checkpoints для настройки извлечения объектов без повторного обучения сети.
+After the seed study, a small set of promising checkpoints was selected for object extraction tuning without retraining the network.
 
-| Модальности | Checkpoint | Weighted competition F1 | Причина включения |
+| Modalities | Checkpoint | Weighted competition F1 | Reason included |
 |---|---|---:|---|
-| `Li` | `resnet34_li_seed_101` | **0.7310** | лучший Li-only checkpoint |
-| `Li`, `Ae`, `SpOr` | `resnet34_all_seed_21` | **0.6811** | лучший мультимодальный Weighted competition F1 |
-| `Li`, `Ae`, `SpOr` | `resnet34_all_seed_77` | 0.6725 | более высокий object recall |
-| `Li`, `Ae`, `SpOr` | `resnet34_all_seed_101` | 0.6700 | лучший мультимодальный object F1 и recall |
+| `Li` | `resnet34_li_seed_101` | **0.7310** | best Li-only checkpoint |
+| `Li`, `Ae`, `SpOr` | `resnet34_all_seed_21` | **0.6811** | best multimodal weighted competition F1 |
+| `Li`, `Ae`, `SpOr` | `resnet34_all_seed_77` | 0.6725 | higher object recall |
+| `Li`, `Ae`, `SpOr` | `resnet34_all_seed_101` | 0.6700 | best multimodal object F1 and recall |
 
-### Вывод этапа
+### Stage Result
 
-**Checkpoint с максимальным Weighted competition F1 до постпроцессинга не обязательно формирует лучший итоговый pipeline.** Для объектной задачи требуется отдельная настройка преобразования масок в полигоны.
+The checkpoint with the best weighted competition F1 before postprocessing does not necessarily produce the best final object-level pipeline. Mask-to-polygon conversion has to be tuned separately.
 
-## Этап 6. Подбор постпроцессинга
+## Stage 6. Postprocessing Sweep
 
-### Мотивация
+### Motivation
 
-Нейросеть возвращает вероятности классов для каждого пикселя. Для практического использования эти вероятности необходимо преобразовать в чистые связные объекты.
+The network outputs per-pixel class probabilities. For practical use, these probabilities have to be converted into clean connected objects.
 
-Postprocessing sweep проверяет, насколько можно повысить object-level качество без повторного обучения модели.
+The postprocessing sweep tests how much object-level quality can be improved without retraining the model.
 
-### Параметры
+### Parameters
 
-**Confidence threshold** — минимальная уверенность модели, при которой пиксель считается частью объекта. Более низкое значение может повысить recall, но также добавить ложные срабатывания.
+**Confidence threshold** — minimum model confidence for a pixel to be treated as part of an object. Lower values may improve recall but can add false positives.
 
-**Minimum component area** — фильтрация слишком маленьких связных областей. Она удаляет одиночные пиксели и мелкий шум, которые маловероятно являются археологическими объектами.
+**Minimum component area** — removes small connected components that are unlikely to be archaeological objects.
 
-**Morphological opening** — последовательность эрозии и расширения маски. Она помогает убрать небольшие выступы, изолированные пиксели и шумные соединения между объектами.
+**Morphological opening** — erosion followed by dilation. This removes isolated pixels, small protrusions, and noisy links between objects.
 
-### Пространство поиска
+### Search Space
 
-| Параметр | Значения |
+| Parameter | Values |
 |---|---|
 | Confidence threshold | `0.0`, `0.1`, `0.2`, `0.3`, `0.4`, `0.5` |
 | Minimum component area | `8`, `16`, `32`, `64`, `128`, `256` |
 | Morphological opening | `False`, `True` |
-| Комбинаций для каждого checkpoint | `72` |
-| Validation-конфигураций для четырех checkpoints | `288` |
+| Combinations per checkpoint | `72` |
+| Validation configurations for four checkpoints | `288` |
 
-Все решения принимались только на validation. Test split для выбора модели не использовался.
+All decisions were made on validation only. No test split was used for model selection.
 
-### Результаты
+### Results
 
-| Checkpoint | Weighted competition F1 | Лучший Weighted competition F1 | Delta | Confidence | Min area | Opening |
+| Checkpoint | Weighted competition F1 | Best weighted competition F1 | Delta | Confidence | Min area | Opening |
 |---|---:|---:|---:|---:|---:|---|
 | `resnet34_li_seed_101` | 0.7310 | 0.7316 | +0.0006 | 0.3 | 8 | False |
 | `resnet34_all_seed_21` | 0.6811 | 0.7246 | +0.0435 | 0.3 | 8 | True |
 | `resnet34_all_seed_77` | 0.6725 | 0.6949 | +0.0224 | 0.3 | 8 | True |
 | `resnet34_all_seed_101` | 0.6700 | **0.7457** | **+0.0757** | 0.3 | 8 | True |
 
-![Postprocessing sweep для итоговой модели](assets/plots/postprocess_sweep_resnet34_all_seed_101.png)
+![Postprocessing sweep for the final model](assets/plots/postprocess_sweep_resnet34_all_seed_101.png)
 
-### Вывод этапа
+### Stage Result
 
-**Postprocessing sweep изменил итоговый выбор модели.** Лучшим checkpoint до postprocessing была Li-only модель, но самый сильный object-aware pipeline получен для мультимодальной ResNet34 с seed `101`.
+Postprocessing changed the final model choice. The best checkpoint before postprocessing was Li-only, but the strongest object-aware pipeline used multimodal ResNet34 with seed `101`.
 
-## Model evolution on the same validation samples
+## Model Evolution on the Same Validation Samples
 
-На рисунке ниже одни и те же validation patches проходят через последовательные версии pipeline: диагностические encoder/modality модели, обученные на раннем split, и финальную ResNet34 all-modalities модель.
+The figure below applies successive pipeline versions to the same validation patches: early diagnostic encoder/modality models and the final all-modality ResNet34 model.
 
-Для каждого patch сохранены одинаковый crop, одна и та же цветовая схема классов, GT mask, предсказания всех моделей и overlay финального результата. Рядом с названием patch указаны IoU и object F1 именно для Final Stage C.
+Each patch keeps the same crop, class color map, ground truth mask, model predictions, and final overlay. Patch titles include IoU and object F1 for the Final Stage C pipeline.
 
 ![Model evolution on the same validation samples](assets/readme/model_evolution_examples.png)
 
-На этих примерах видно, что ранние diagnostic models часто дают шумные или смешанные маски даже на хорошо читаемых объектах.
-
+Early diagnostic models often produced noisy or mixed masks even on visually clear objects.
 
 ## Key Findings
 
-- LiDAR оказался наиболее информативной отдельной модальностью.
-- ResNet34 показал более устойчивое поведение, чем ResNet50.
-- Результат существенно зависит от seed.
-- Object-level метрики важнее pixel IoU для прикладной задачи.
-- Постпроцессинг способен изменить выбор лучшей модели.
-- Лучший итоговый pipeline использует `Li`, `Ae`, `SpOr` и postprocessing sweep.
+- LiDAR was the strongest individual modality.
+- ResNet34 behaved more consistently than ResNet50.
+- Results were sensitive to random seed.
+- Object-level metrics were more relevant than pixel IoU for the applied task.
+- Postprocessing changed the final model ranking.
+- The strongest final pipeline used `Li`, `Ae`, `SpOr`, and a postprocessing sweep.
 
-## Итоговый pipeline
+## Final Pipeline
 
-| Компонент | Выбранное значение |
+| Component | Selected value |
 |---|---|
-| Архитектура | DeepLabV3+ |
-| Энкодер | ResNet34 |
-| Входные каналы | 1 |
-| Модальности | `Li`, `Ae`, `SpOr` |
+| Architecture | DeepLabV3+ |
+| Encoder | ResNet34 |
+| Input channels | 1 |
+| Modalities | `Li`, `Ae`, `SpOr` |
 | Research Split | `archaeology_5class_research_split_v1` |
 | Seed | `101` |
 | Confidence threshold | `0.3` |
 | Minimum component area | `8 px` |
 | Morphological opening | `True` |
 
-### Эффект postprocessing sweep
+### Postprocessing Effect
 
-| Метрика | До postprocessing | Итоговый pipeline |
+| Metric | Before postprocessing | Final pipeline |
 |---|---:|---:|
 | Weighted competition F1 | 0.6700 | **0.7457** |
 | Object F1 | 0.7480 | **0.7995** |
 | Object precision | **0.9540** | 0.9114 |
 | Object recall | 0.6152 | **0.7120** |
 
-Постпроцессинг немного снижает precision, но заметно улучшает recall и баланс объектных метрик. Сеть не переобучалась: улучшение получено только за счет корректной настройки polygon extraction.
+Postprocessing slightly reduced precision but substantially improved recall and balanced object-level quality. The network was not retrained; the gain came from tuning polygon extraction.
 
+### Per-Class Diagnostics Before Postprocessing
 
-### Per-class диагностика checkpoint до postprocessing
-
-| Класс | Pixel IoU | Pixel Dice | Object F1 |
+| Class | Pixel IoU | Pixel Dice | Object F1 |
 |---|---:|---:|---:|
 | `background` | 0.7625 | 0.8652 | n/a |
 | `kurgany_tselye` | 0.0794 | 0.1471 | 0.7845 |
@@ -373,7 +363,7 @@ Postprocessing sweep проверяет, насколько можно повы�
 | `fortifikatsii` | 0.0840 | 0.1550 | **0.8039** |
 | `arkhitektury` | 0.0127 | 0.0251 | 0.4706 |
 
-Расхождение между pixel IoU и object F1 является центральным наблюдением проекта: правильно локализованные полигоны могут быть полезны, даже если маски не идеальны на уровне пикселей.
+The gap between pixel IoU and object F1 is central to this module: correctly localized polygons can be useful even when masks are imperfect at the pixel level.
 
 ## Final Result
 
@@ -397,61 +387,61 @@ Final validation performance:
 
 ## Research Contributions
 
-- Построен region-aware benchmark split без пересечения регионов между train и validation.
-- Выполнено `14` обучений DeepLabV3+.
-- Проведены `4` encoder/modality ablation experiments и `10` benchmark-запусков seed study.
-- Выполнен postprocessing sweep из `72` configurations для каждого из `4` checkpoints.
-- Разработан воспроизводимый pipeline object-level evaluation и извлечения полигонов.
+- Built a region-aware benchmark split without train/validation region overlap.
+- Trained `14` DeepLabV3+ models.
+- Ran `4` encoder/modality ablations and `10` benchmark seed-study runs.
+- Evaluated `72` postprocessing configurations for each of `4` checkpoints.
+- Implemented a reproducible object-level evaluation and polygon extraction pipeline.
 
-## Ограничения и анализ ошибок
+## Limitations and Error Analysis
 
-| Проблема | Наблюдение | Следующий шаг |
+| Issue | Observation | Next step |
 |---|---|---|
-| Недосегментация редких классов | низкий IoU для `gorodishcha` и `arkhitektury` | class-aware sampling и выборочная проверка |
-| Foreground-to-background collapse | заметно в confusion matrix | повысить recall без неконтролируемого роста false positives |
-| Смешение целых и поврежденных курганов | классы имеют сходную морфологию | проверить границы классов и неоднозначные annotations |
-| Дисбаланс модальностей | классы представлены в источниках неравномерно | исследовать modality-specific normalization |
-| Отсутствие held-out test | model selection выполнен на validation | создать отдельный test protocol |
-| Чувствительность к seed | обнаружена в десяти benchmark-запусках | сравнивать серии запусков, а не одиночные checkpoints |
+| Undersegmentation of rare classes | low IoU for `gorodishcha` and `arkhitektury` | class-aware sampling and targeted review |
+| Foreground-to-background collapse | visible in the confusion matrix | improve recall without uncontrolled FP growth |
+| Confusion between intact and damaged burial mounds | classes have similar morphology | review class boundaries and ambiguous annotations |
+| Modality imbalance | classes are unevenly represented across sources | study modality-specific normalization |
+| No held-out test | model selection was performed on validation | define a separate test protocol |
+| Seed sensitivity | observed across ten benchmark runs | compare run series rather than single checkpoints |
 
-## Representative predictions
+## Representative Predictions
 
-Ниже показаны пять лучших validation patches для финального pipeline. Ранжирование выполнено по patch-level `object_f1` и `weighted score`.
+The figure shows the five best validation patches for the final pipeline, ranked by patch-level `object_f1` and weighted score.
 
 ![Representative predictions](assets/predictions/final_resnet34_all_seed_101.png)
 
-## Representative failure cases
+## Representative Failure Cases
 
-Ниже показаны пять худших validation patches для финального pipeline. Ранжирование выполнено по patch-level `object_f1` и `weighted score`.
+The figure shows the five worst validation patches for the final pipeline, ranked by patch-level `object_f1` and weighted score.
 
 ![Representative failure cases](reports/figures/failure_cases.png)
 
-## Failure analysis
+## Failure Analysis
 
-- Основной режим ошибки — пропуск объекта: 83.1% failed GT components имеют dominant prediction `background`.
-- Самый большой вклад в абсолютное число failed components дает `kurgany_povrezhdennye`. Это связано не только с качеством модели, но и с тем, что этот класс самый массовый в validation.
-- Самая частая foreground-to-foreground путаница: `kurgany_tselye -> kurgany_povrezhdennye`. Следующие заметные переходы: `gorodishcha -> kurgany_povrezhdennye` и `fortifikatsii -> kurgany_povrezhdennye`.
-- В визуальной Top-5 worst галерее четыре из пяти относятся к `fortifikatsii` и локализованы в регионах `005_ЛУБНО` / `006_МОСКОВИТЫ`. Эти случаи показывают тяжелую путаницу протяженных фортификационных форм с курганными масками.
+- The dominant failure mode is missed objects: 83.1% of failed GT components have dominant prediction `background`.
+- `kurgany_povrezhdennye` contributes the largest absolute number of failed components, partly because it is the largest validation class.
+- The most common foreground-to-foreground confusion is `kurgany_tselye -> kurgany_povrezhdennye`. Other notable transitions are `gorodishcha -> kurgany_povrezhdennye` and `fortifikatsii -> kurgany_povrezhdennye`.
+- In the visual top-5 worst gallery, four of five cases belong to `fortifikatsii` and are located in regions `005_ЛУБНО` / `006_МОСКОВИТЫ`. These cases show difficult confusion between elongated fortification forms and burial-mound-like masks.
 
-Полная таблица переходов сохранена в `reports/failure_analysis.csv`, автоматический summary — в `reports/failure_summary.md`.
+The full transition table is stored in `reports/failure_analysis.csv`; the automatic summary is stored in `reports/failure_summary.md`.
 
-## Воспроизводимость
+## Reproducibility
 
-### Структура репозитория
+### Repository Structure
 
 ```text
 03_multiclass_segmentation_deeplab/
-├── assets/          # отобранные визуализации для README
-├── arch_datasets/   # загрузка датасета и фильтрация metadata
-├── configs/         # рецепты экспериментов
-├── losses/          # CE, BCE и Dice combinations
+├── assets/          # curated README visualizations
+├── arch_datasets/   # dataset loading and metadata filtering
+├── configs/         # experiment recipes
+├── losses/          # CE, BCE and Dice combinations
 ├── models/          # DeepLabV3+ model factory
-├── notebooks/       # Kaggle runners и reproduction notebooks
-├── reports/         # полные исследовательские сводки
-├── runs/            # локальные checkpoints и полные артефакты
-├── scripts/         # обучение, evaluation, sweep и профилирование
+├── notebooks/       # Kaggle runners and reproduction notebooks
+├── reports/         # full research summaries
+├── runs/            # local checkpoints and run artifacts
+├── scripts/         # training, evaluation, sweep and profiling
 ├── splits/          # frozen benchmark CSV
-├── utils/           # метрики, split helpers и postprocessing
+├── utils/           # metrics, split helpers and postprocessing
 └── requirements.txt
 ```
 
@@ -463,9 +453,9 @@ python scripts/create_research_split.py \
   --out-dir splits/archaeology_5class_research_split_v1
 ```
 
-Split уже зафиксирован в репозитории. Эту команду не следует повторно запускать во время сравнения моделей.
+The split is already fixed in the repository. This command should not be rerun during model comparison.
 
-### Обучение
+### Training
 
 ```bash
 python scripts/train.py \
@@ -481,7 +471,7 @@ python scripts/train.py \
   --val-split-csv splits/archaeology_5class_research_split_v1/val_split.csv
 ```
 
-### Object-level evaluation
+### Object-Level Evaluation
 
 ```bash
 python scripts/evaluate.py \
@@ -496,7 +486,7 @@ python scripts/evaluate.py \
   --eval-mode object
 ```
 
-### README galleries
+### README Galleries
 
 ```bash
 python -u scripts/generate_final_readme_visualizations.py \
@@ -504,20 +494,20 @@ python -u scripts/generate_final_readme_visualizations.py \
   --num-workers 0
 ```
 
-Скрипт воспроизводимо формирует ranked galleries, before/after примеры и итоговые коллажи для README.
+The script reproducibly generates ranked galleries, before/after examples, and final README collages.
 
-Отобранные для GitHub визуализации находятся в `assets/`. Сырые checkpoints, полные папки запусков, локальные архивы и датасеты остаются за пределами системы контроля версий.
+Curated GitHub visualizations are stored in `assets/`. Raw checkpoints, full run directories, local archives, and datasets stay outside version control.
 
-## Дальнейшая работа
+## Future Work
 
-1. Добавить настоящий held-out test protocol.
-2. Исследовать class-aware sampling для `gorodishcha` и `arkhitektury`.
-3. Проверить modality-specific normalization для мультимодальной модели.
-4. Добавить checksums snapshot датасета и lock-файл окружения.
-5. Провести контролируемую sampler ablation без изменения frozen benchmark.
+1. Add a true held-out test protocol.
+2. Study class-aware sampling for `gorodishcha` and `arkhitektury`.
+3. Test modality-specific normalization for the multimodal model.
+4. Add a dataset checksum snapshot and environment lock file.
+5. Run a controlled sampler ablation without changing the frozen benchmark.
 
-## Приложение: аудит ранних экспериментов
+## Appendix: Early Experiment Audit
 
-Ранние эксперименты использовали несовместимые validation-протоколы. Аудит выявил split mismatch и риск частичной validation leakage при сравнении legacy checkpoint с более поздними моделями. Эти результаты не включены в итоговый benchmark.
+Early experiments used incompatible validation protocols. The audit found split mismatch and a risk of partial validation leakage when comparing legacy checkpoints with later models. These results are excluded from the final benchmark.
 
-Подробные артефакты аудита сохранены локально в `runs/audit_old_baseline_resnet34/`. Research Split был введен именно для того, чтобы дальнейшие сравнения оставались воспроизводимыми.
+Detailed audit artifacts are stored locally in `runs/audit_old_baseline_resnet34/`. The Research Split was introduced to keep later comparisons reproducible.

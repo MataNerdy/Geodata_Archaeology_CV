@@ -1,35 +1,35 @@
 # Binary Kurgan Segmentation with U-Net
 
-## Обзор
+## Overview
 
-Этот модуль посвящен построению базовой модели семантической сегментации курганов на археологических геоданных.
+This module builds a semantic segmentation baseline for burial mounds on archaeological remote-sensing data.
 
-Цель этапа - проверить, насколько хорошо легкая U-Net архитектура решает более узкую задачу:
+The goal was to test whether a lightweight U-Net can solve a narrower version of the problem:
 
-> можно ли надежно выделять курганы как единый foreground-класс?
+> Can burial mounds be segmented reliably as a single foreground class?
 
-Модуль стал baseline-этапом перед переходом к более сложному исследованию DeepLabV3+ в `03_multiclass_segmentation_deeplab`.
+This module serves as the baseline stage before the more complex DeepLabV3+ study in `03_multiclass_segmentation_deeplab`.
 
 ![Binary LiDAR segmentation](assets/readme/hero_binary_shumgora_medium.png)
 
-*Binary LiDAR segmentation: input image, ground truth, prediction and overlay.*
+*Binary LiDAR segmentation: input image, ground truth, prediction, and overlay.*
 
-## Исследовательский вопрос
+## Research Question
 
-Можно ли построить устойчивый binary segmentation baseline для курганов на многомодальных археологических данных?
+Can a stable binary segmentation baseline be built for burial mounds on multi-modal archaeological data?
 
-В этом модуле проверялись:
+The experiments tested:
 
-- влияние модальности: `Li`, `Ae`, `SpOr`;
+- modality effects: `Li`, `Ae`, `SpOr`;
 - multiclass vs binary formulation;
 - BCE vs Dice loss;
 - threshold calibration;
-- влияние image size;
-- роль hard negatives из других археологических классов.
+- image size;
+- hard negatives from other archaeological classes.
 
-## Dataset And Task
+## Dataset and Task
 
-Исходный patch-based dataset был подготовлен в модуле `01_geodata_to_cv`.
+The patch-based dataset was prepared in `01_geodata_to_cv`.
 
 ```text
 datasets/segmentation_dataset/
@@ -38,15 +38,15 @@ datasets/segmentation_dataset/
 └── metadata.csv
 ```
 
-Поддерживаемые модальности:
+Supported modalities:
 
-| Модальность | Описание |
+| Modality | Description |
 |---|---|
 | `Li` | LiDAR-derived raster |
 | `Ae` | aerial imagery |
 | `SpOr` | satellite / orthophoto imagery |
 
-В binary mode все курганы объединяются в один foreground-класс:
+In binary mode, both burial-mound classes are merged into one foreground class:
 
 | Original class | Binary class |
 |---|---|
@@ -57,7 +57,7 @@ datasets/segmentation_dataset/
 | `fortifikatsii` | background / hard negative |
 | `arkhitektury` | background / hard negative |
 
-Это важно: другие археологические объекты остаются в данных как hard negatives, потому что визуально они могут быть похожи на курганы.
+Other archaeological structures remain in the data as hard negatives because they can be visually similar to burial mounds.
 
 ## Pipeline
 
@@ -73,18 +73,18 @@ datasets/segmentation_dataset/
 └── notebooks/       # exploratory notebooks
 ```
 
-Модуль поддерживает:
+The module supports:
 
 - filtering by modality;
 - binary and multiclass training modes;
 - custom validation regions;
 - BCE / Dice / BCE + Dice losses;
-- threshold sweep after training;
-- visualization of predictions and failure cases.
+- post-training threshold sweep;
+- prediction and failure-case visualization.
 
 ## Experiment Summary
 
-Основная серия экспериментов проверяла, что именно дает наибольший вклад в качество baseline.
+The main experiment series tested which factors contributed most to the baseline quality.
 
 | Experiment | Task | Modalities | Loss | Image size | Best metric |
 |---|---|---|---|---:|---:|
@@ -97,14 +97,14 @@ datasets/segmentation_dataset/
 
 ## Key Findings
 
-- `Li` оказался самой информативной модальностью для выделения курганов.
-- Binary formulation заметно стабильнее multiclass formulation для легкой U-Net.
-- BCE-only оказался лучше BCE + Dice в binary mode.
-- Threshold calibration улучшила результат без повторного обучения модели.
-- Увеличение image size с `256` до `512` ухудшило качество для `UNetSmall`.
-- Другие археологические структуры работают как важные hard negatives.
+- `Li` was the most informative modality for burial-mound segmentation.
+- Binary formulation was more stable than multiclass formulation for the lightweight U-Net.
+- BCE-only performed better than BCE + Dice in binary mode.
+- Threshold calibration improved the result without retraining.
+- Increasing image size from `256` to `512` reduced quality for `UNetSmall`.
+- Other archaeological structures are important hard negatives.
 
-Модальность оказалась не второстепенной настройкой, а главным источником качества:
+Modality was not a minor configuration choice; it was one of the main drivers of quality:
 
 | Experiment | mean fg IoU |
 |---|---:|
@@ -113,11 +113,11 @@ datasets/segmentation_dataset/
 | Ae only | 0.057 |
 | SpOr only | 0.051 |
 
-Этот результат стал одним из оснований для дальнейшего фокуса на LiDAR morphology в baseline и для отдельной проверки мультимодальности в DeepLabV3+.
+This result motivated the later focus on LiDAR morphology in the baseline and the separate multimodality analysis in the DeepLabV3+ module.
 
 ## Best Result
 
-Лучший результат был получен для LiDAR-only binary segmentation.
+The best result was obtained with LiDAR-only binary segmentation.
 
 | Component | Value |
 |---|---|
@@ -129,7 +129,7 @@ datasets/segmentation_dataset/
 | Threshold | `0.60` |
 | Foreground IoU | **0.6789** |
 
-Threshold tuning дал прирост без retraining:
+Threshold tuning improved the result without retraining:
 
 ```text
 fg IoU: 0.6651 -> 0.6789
@@ -141,13 +141,13 @@ fg IoU: 0.6651 -> 0.6789
 
 ![Binary predictions](assets/readme/binary_li_shumgora_examples.png)
 
-Примеры показывают good, medium и failure cases на validation patches.
+Examples include good, medium, and failure cases on validation patches.
 
 ### Threshold Sweep
 
 ![Threshold sweep](assets/readme/threshold_sweep_binary_li_no_dice.png)
 
-Оптимальный threshold оказался выше стандартного `0.5`:
+The best threshold was higher than the standard `0.5`:
 
 | Threshold | Precision | Recall |
 |---:|---:|---:|
@@ -155,27 +155,25 @@ fg IoU: 0.6651 -> 0.6789
 | 0.60 | 0.747 | 0.882 |
 | 0.75 | 0.803 | 0.797 |
 
-Это показывает, что модель склонна пере-предсказывать археологический foreground: повышение threshold уменьшает false positives и улучшает итоговый IoU.
+The model tended to over-predict archaeological foreground. Raising the threshold reduced false positives and improved the final IoU.
 
 ### Failure Cases
 
 ![Failure cases](assets/readme/failure_cases_binary_li.png)
 
-Типичные ошибки связаны с noisy terrain, merged objects, tiny kurgans и hard negatives, визуально похожими на курганы.
+Typical errors involved noisy terrain, merged objects, tiny burial mounds, and hard negatives that resemble kurgans.
 
 ## Interpretation
 
-Этот baseline показал, что главная сложность задачи не только в архитектуре модели.
+This baseline showed that the difficulty was not only architectural. Quality depended strongly on the problem formulation:
 
-Качество сильно зависит от постановки:
+- multiclass segmentation was unstable for the small U-Net;
+- LiDAR provided the clearest morphology;
+- visual modalities could introduce domain noise;
+- loss function and threshold calibration had a measurable effect;
+- hard negatives were necessary for realistic evaluation.
 
-- multiclass segmentation на маленькой U-Net нестабильна;
-- LiDAR дает наиболее читаемую морфологию;
-- визуальные модальности могут добавлять domain noise;
-- loss function и threshold calibration существенно влияют на результат;
-- hard negatives нужны для реалистичной оценки.
-
-Именно эти выводы определили следующий шаг проекта: перейти к более сильной архитектуре DeepLabV3+ и полноценной multiclass object-level evaluation.
+These observations led to the next stage of the project: a stronger DeepLabV3+ model and multiclass object-level evaluation.
 
 ## Reproducibility
 
@@ -212,9 +210,9 @@ python scripts/threshold_sweep.py \
   --binary-positive-classes "1,2"
 ```
 
-## Role In The Full Project
+## Role in the Full Project
 
-Этот модуль является baseline-ступенью всей серии:
+This module is the baseline step in the full series:
 
 ```text
 Geodata preprocessing
@@ -226,11 +224,11 @@ Multiclass DeepLabV3+ research
 YOLO-ready detection dataset
 ```
 
-Главный вклад модуля — доказать, что LiDAR morphology действительно содержит сильный сигнал для археологической сегментации, а также зафиксировать baseline:
+The module established that LiDAR morphology contains a strong signal for archaeological segmentation and fixed the first segmentation baseline:
 
 ```text
 UNetSmall + Li + binary segmentation + BCE + threshold 0.60
 fg IoU = 0.6789
 ```
 
-Дальнейшее развитие этой линии выполнено в `03_multiclass_segmentation_deeplab`, где задача расширена до пяти foreground-классов, region-aware benchmark split и object-level evaluation.
+The next stage is `03_multiclass_segmentation_deeplab`, where the task is extended to five foreground classes, a region-aware benchmark split, and object-level evaluation.

@@ -1,37 +1,35 @@
-#  Archaeological Geodata CV Pipeline
+# Archaeological Geodata CV Pipeline
 
 Computer vision pipeline for converting archaeological geodata into segmentation and object detection datasets.
 
-## Что вообще тут происходит
+## Overview
 
-Проект начался с набора археологических геоданных:
+The project starts from heterogeneous archaeological geodata:
 
-    LiDAR
-    аэрофотосъемка
-    спутниковые изображения
-    GeoJSON polygon-разметка
+- LiDAR rasters;
+- aerial imagery;
+- satellite imagery;
+- GeoJSON polygon annotations.
 
-Главная проблема заключалась в том, что данные изначально не были пригодны для CV-задач.
+The raw data was not directly usable for computer vision. The first stage therefore focused on geospatial alignment, visual validation, and dataset generation.
 
-Нужно было:
+Required preprocessing steps:
 
-    совмещать raster и vector данные,
-    разбираться с CRS,
-    строить overlay для проверки геометрии,
-    генерировать segmentation datasets,
-    собирать detection datasets для YOLO.
+- align raster and vector data;
+- handle CRS differences between sources;
+- generate overlay visualizations for geometry checks;
+- build segmentation datasets;
+- build YOLO-ready detection datasets.
 
-## Overlay Validation и CRS Alignment
+## Overlay Validation and CRS Alignment
 
+The first validation step was to check whether annotated objects were correctly aligned with the raster data.
 
-Одной из первых задач была проверка:
-    совпадает ли геометрия объектов с растрами.
+Main tools:
 
-Использовались:
-
-    rasterio
-    geopandas
-    shapely
+- `rasterio`;
+- `geopandas`;
+- `shapely`.
 
 <p align="center">
     <img src="assets/overlay_assets/img4.png" width="700">
@@ -40,31 +38,30 @@ Computer vision pipeline for converting archaeological geodata into segmentation
     <img src="assets/overlay_assets/img5.png" width="700">
 </p>
 
-Некоторые регионы содержали несовпадающие CRS между raster и GeoJSON данными, поэтому был реализован fallback reprojection pipeline.
+Some regions had CRS mismatches between raster and GeoJSON data, so the preprocessing pipeline includes a fallback reprojection path.
 
-## Генерация segmentation dataset
+## Segmentation Dataset Generation
 
-Следующим этапом стала генерация patch/mask датасетов.
+The next step was to generate image patches and segmentation masks.
 
-### Early baseline
+### Early Baseline
 
-Сначала использовался простой crop вокруг объекта с фиксированным контекстом.
+The first baseline used a simple crop around each annotated object with a fixed context window.
 
 <p align="center">
     <img src="assets/patch.png" width="700">
 </p>
 
-### Adaptive crop extraction
+### Adaptive Crop Extraction
 
-Позже появился adaptive crop pipeline.
+The later pipeline switched to adaptive crop extraction.
 
-Идея:
-
-    размер crop автоматически адаптируется под spatial scale объекта
+Crop size is adjusted to the spatial scale of each object:
 
 ```python
-    crop_size = max(object_size * context_scale, min_crop_size)
+crop_size = max(object_size * context_scale, min_crop_size)
 ```
+
 <p align="center">
     <img src="assets/mask_assets/mask3.png" width="700">
     <img src="assets/mask_assets/mask1.png" width="700">
@@ -74,16 +71,16 @@ Computer vision pipeline for converting archaeological geodata into segmentation
     <img src="assets/mask_assets/mask6.png" width="700">
 </p>
 
-Это позволило:
+This improved dataset generation in several ways:
 
-- не терять маленькие объекты,
-- сохранять spatial context,
-- уменьшить агрессивный resize,
-- лучше работать с объектами разных масштабов.
+- small objects were less likely to be lost;
+- spatial context was preserved;
+- aggressive resizing was reduced;
+- objects at different scales were handled more consistently.
 
-### YOLO dataset generation
+### YOLO Dataset Generation
 
-После segmentation preprocessing pipeline был собран detection pipeline для YOLO.
+After the segmentation preprocessing pipeline, the same geospatial sources were used to build a YOLO detection dataset.
 
 <p align="center">
     <img src="assets/bbox_assets/bbox1.png" width="500">
@@ -92,21 +89,22 @@ Computer vision pipeline for converting archaeological geodata into segmentation
     <img src="assets/bbox_assets/bbox4.png" width="500">
 </p>
 
-Одна из сложностей:
+One recurring issue was the high number of small objects inside a single tile, which later became important for the detection experiments.
 
-    oчень большое количество маленьких объектов внутри одного тайла.
-
-## Используемые инструменты
+## Tools
 
 ### Geospatial
-- rasterio
-- geopandas
-- shapely
+
+- `rasterio`
+- `geopandas`
+- `shapely`
 
 ### ML / CV
+
 - PyTorch
 - YOLOv8
 
 ### Visualization / EDA
-- matplotlib
+
+- Matplotlib
 - Streamlit

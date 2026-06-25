@@ -73,4 +73,3 @@ Geodata_Archaeology_CV/
 - [`02_unet_segmentation`](02_unet_segmentation/) - binary U-Net segmentation baseline for kurgan detection.
 - [`03_multiclass_segmentation_deeplab`](03_multiclass_segmentation_deeplab/) - multiclass DeepLabV3+ research project with region-aware validation and object-level evaluation.
 - [`04_detection_yolo`](04_detection_yolo/) - YOLO object detection research, threshold analysis, proposal generation and manual proposal audit.
-- [`docs/readme_archive`](docs/readme_archive/) - archived Russian README versions.
