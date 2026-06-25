@@ -54,7 +54,69 @@ The project is organized as a progression from raw geodata to ML-ready datasets,
 
 ## Tech Stack
 
-Python, PyTorch, DeepLabV3+, U-Net, Ultralytics YOLO, YOLO dataset format, Rasterio, GeoPandas, Shapely, NumPy, Pandas, Matplotlib, Streamlit.
+Core:
+
+- Python
+- NumPy
+- Pandas
+- PyYAML
+
+Geospatial:
+
+- Rasterio
+- GeoPandas
+- Shapely
+- CRS reprojection and overlay validation
+
+Modeling:
+
+- PyTorch
+- torchvision
+- U-Net
+- DeepLabV3+
+- `segmentation-models-pytorch`
+- Ultralytics YOLO
+- YOLO dataset format
+
+Evaluation and postprocessing:
+
+- pixel IoU, Dice, pixel accuracy
+- object-level connected-component metrics
+- weighted polygon-level competition F1
+- mAP, precision, recall
+- threshold sweeps
+- proposal coverage at IoU thresholds
+- OpenCV-based mask and component postprocessing
+
+Visualization and review:
+
+- Matplotlib
+- Pillow
+- OpenCV
+- Streamlit
+- contact sheets and overlay galleries
+- Kaggle / notebook-based experiment runners
+
+## Project-Level Contributions
+
+| Area | What was built or tested |
+|---|---|
+| Geospatial preprocessing | CRS-aware raster/vector alignment, overlay validation, fallback reprojection, adaptive crop extraction |
+| Dataset engineering | segmentation masks, YOLO bounding boxes, metadata-driven filtering, negative samples, class and modality profiling |
+| Validation protocol | region-aware splits, frozen benchmark CSV files, leakage checks by region/source/raster |
+| Segmentation baselines | binary U-Net for kurgans; multiclass DeepLabV3+ with object-level evaluation |
+| Model selection | encoder/modality ablations, seed study, threshold calibration, postprocessing sweep |
+| Detection research | YOLO dataset ablations, threshold sweeps, regional validation audits, proposal generation |
+| Human review tooling | Streamlit audit apps, contact sheets, manual proposal review tables |
+
+## What to Read First
+
+| If you are interested in... | Start with |
+|---|---|
+| geospatial data preparation | [`01_geodata_to_cv`](01_geodata_to_cv/) |
+| a compact segmentation baseline | [`02_unet_segmentation`](02_unet_segmentation/) |
+| the main segmentation research workflow | [`03_multiclass_segmentation_deeplab`](03_multiclass_segmentation_deeplab/) |
+| detection, proposal generation, and manual audit | [`04_detection_yolo`](04_detection_yolo/) |
 
 ## Repository Structure
 
@@ -64,6 +126,7 @@ Geodata_Archaeology_CV/
 ├── 02_unet_segmentation/
 ├── 03_multiclass_segmentation_deeplab/
 ├── 04_detection_yolo/
+├── docs/
 └── README.md
 ```
 

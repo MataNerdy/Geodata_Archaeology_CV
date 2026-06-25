@@ -10,7 +10,7 @@
 
 Модуль стал baseline-этапом перед переходом к более сложному исследованию DeepLabV3+ в `03_multiclass_segmentation_deeplab`.
 
-![Binary LiDAR segmentation](assets/readme/hero_binary_shumgora_medium.png)
+![Binary LiDAR segmentation](../../../02_unet_segmentation/assets/readme/hero_binary_shumgora_medium.png)
 
 *Binary LiDAR segmentation: input image, ground truth, prediction and overlay.*
 
@@ -139,13 +139,13 @@ fg IoU: 0.6651 -> 0.6789
 
 ### Binary LiDAR Predictions
 
-![Binary predictions](assets/readme/binary_li_shumgora_examples.png)
+![Binary predictions](../../../02_unet_segmentation/assets/readme/binary_li_shumgora_examples.png)
 
 Примеры показывают good, medium и failure cases на validation patches.
 
 ### Threshold Sweep
 
-![Threshold sweep](assets/readme/threshold_sweep_binary_li_no_dice.png)
+![Threshold sweep](../../../02_unet_segmentation/assets/readme/threshold_sweep_binary_li_no_dice.png)
 
 Оптимальный threshold оказался выше стандартного `0.5`:
 
@@ -159,7 +159,7 @@ fg IoU: 0.6651 -> 0.6789
 
 ### Failure Cases
 
-![Failure cases](assets/readme/failure_cases_binary_li.png)
+![Failure cases](../../../02_unet_segmentation/assets/readme/failure_cases_binary_li.png)
 
 Типичные ошибки связаны с noisy terrain, merged objects, tiny kurgans и hard negatives, визуально похожими на курганы.
 

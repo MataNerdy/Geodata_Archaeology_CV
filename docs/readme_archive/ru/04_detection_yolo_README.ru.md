@@ -15,7 +15,7 @@ YOLO ограничен как финальный detector,
 LiDAR tiles -> YOLO detection -> proposal generation -> manual proposal audit
 ```
 
-![Case study: validation image 000444](assets/readme/figure_case_study_000444.png)
+![Case study: validation image 000444](../../../04_detection_yolo/assets/readme/figure_case_study_000444.png)
 
 На validation image `000444` удобно проследить всю логику эксперимента:
 
@@ -273,7 +273,7 @@ max_iou_with_gt < 0.3
 
 Для `000444` ручной audit особенно показателен: среди low-confidence proposals есть не только matched objects, но и additional objects, которые формально не совпадают с GT, однако выглядят археологически осмысленно.
 
-![Manual review of 000444 proposal crops](assets/readme/figure_000444_manual_review.png)
+![Manual review of 000444 proposal crops](../../../04_detection_yolo/assets/readme/figure_000444_manual_review.png)
 
 Стандартные detection metrics в такой постановке занижают практическую полезность proposal generator. Многие "false positives" не обязательно являются ошибками модели: это могут быть недоразмеченные объекты, неоднозначные археологические структуры или признаки вне текущего GT definition.
 

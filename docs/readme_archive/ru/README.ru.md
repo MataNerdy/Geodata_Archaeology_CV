@@ -18,7 +18,7 @@ The pipeline covers:
 
 The project is organized as a progression from raw geodata to ML-ready datasets, then to segmentation models, detection experiments, and proposal-based archaeological review.
 
-![YOLO proposal case study](04_detection_yolo/assets/readme/figure_case_study_000444.png)
+![YOLO proposal case study](../../../04_detection_yolo/assets/readme/figure_case_study_000444.png)
 
 ## Pipeline
 
@@ -36,10 +36,10 @@ The project is organized as a progression from raw geodata to ML-ready datasets,
 
 | Stage | Module | Role | Key output |
 |---|---|---|---|
-| Geodata preprocessing | [`01_geodata_to_cv`](01_geodata_to_cv/) | CRS alignment, overlay validation, dataset generation | segmentation masks, YOLO-ready bbox data |
-| Binary segmentation | [`02_unet_segmentation`](02_unet_segmentation/) | U-Net baseline for kurgan segmentation | best fg IoU = 0.6789 |
-| Multiclass segmentation | [`03_multiclass_segmentation_deeplab`](03_multiclass_segmentation_deeplab/) | flagship DeepLabV3+ research module | weighted F1 = 0.7457 |
-| Object detection | [`04_detection_yolo`](04_detection_yolo/) | YOLO detection research and proposal generation | coverage@IoU0.3 = 0.639 at conf=0.05 |
+| Geodata preprocessing | [`01_geodata_to_cv`](../../../01_geodata_to_cv/) | CRS alignment, overlay validation, dataset generation | segmentation masks, YOLO-ready bbox data |
+| Binary segmentation | [`02_unet_segmentation`](../../../02_unet_segmentation/) | U-Net baseline for kurgan segmentation | best fg IoU = 0.6789 |
+| Multiclass segmentation | [`03_multiclass_segmentation_deeplab`](../../../03_multiclass_segmentation_deeplab/) | flagship DeepLabV3+ research module | weighted F1 = 0.7457 |
+| Object detection | [`04_detection_yolo`](../../../04_detection_yolo/) | YOLO detection research and proposal generation | coverage@IoU0.3 = 0.639 at conf=0.05 |
 
 ## Key Results
 
@@ -69,7 +69,7 @@ Geodata_Archaeology_CV/
 
 ## Navigation
 
-- [`01_geodata_to_cv`](01_geodata_to_cv/) - geodata preprocessing, CRS alignment, overlay validation and dataset generation.
-- [`02_unet_segmentation`](02_unet_segmentation/) - binary U-Net segmentation baseline for kurgan detection.
-- [`03_multiclass_segmentation_deeplab`](03_multiclass_segmentation_deeplab/) - multiclass DeepLabV3+ research project with region-aware validation and object-level evaluation.
-- [`04_detection_yolo`](04_detection_yolo/) - YOLO object detection research, threshold analysis, proposal generation and manual proposal audit.
+- [`01_geodata_to_cv`](../../../01_geodata_to_cv/) - geodata preprocessing, CRS alignment, overlay validation and dataset generation.
+- [`02_unet_segmentation`](../../../02_unet_segmentation/) - binary U-Net segmentation baseline for kurgan detection.
+- [`03_multiclass_segmentation_deeplab`](../../../03_multiclass_segmentation_deeplab/) - multiclass DeepLabV3+ research project with region-aware validation and object-level evaluation.
+- [`04_detection_yolo`](../../../04_detection_yolo/) - YOLO object detection research, threshold analysis, proposal generation and manual proposal audit.

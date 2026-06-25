@@ -13,7 +13,7 @@
 - насколько результат зависит от seed,
 - можно ли улучшить извлечение объектов без повторного обучения нейросети.
 
-![Representative predictions](assets/predictions/final_resnet34_all_seed_101.png)
+![Representative predictions](../../../03_multiclass_segmentation_deeplab/assets/predictions/final_resnet34_all_seed_101.png)
 
 Финальная версия проекта — DeepLabV3+ с ResNet34 encoder, модальностями `Li`, `Ae`, `SpOr` и Stage C postprocessing. Подробная конфигурация pipeline и финальные метрики вынесены в отдельные разделы ниже, чтобы не смешивать выбор модели с оценкой результата.
 
@@ -84,12 +84,12 @@ segmentation_dataset/
 
 ### Примеры объектов
 
-![Примеры объектов датасета](assets/dataset/dataset_examples_collage.png)
+![Примеры объектов датасета](../../../03_multiclass_segmentation_deeplab/assets/dataset/dataset_examples_collage.png)
 
 ### Дисбаланс классов
 
 
-![Дисбаланс классов](assets/dataset/class_imbalance.png)
+![Дисбаланс классов](../../../03_multiclass_segmentation_deeplab/assets/dataset/class_imbalance.png)
 
 Поврежденные курганы доминируют среди patches. `gorodishcha` и `arkhitektury` представлены значительно реже, поэтому для них особенно важны аккуратная validation-оценка и дальнейший анализ ошибок.
 
@@ -102,13 +102,13 @@ segmentation_dataset/
 | `Li` | растр на основе LiDAR | 934 |
 | `Or` | дополнительный ортофотоплан | 76 |
 
-![Распределение сэмплов по классам и модальностям](assets/dataset/class_modality_heatmap.png)
+![Распределение сэмплов по классам и модальностям](../../../03_multiclass_segmentation_deeplab/assets/dataset/class_modality_heatmap.png)
 
 Классы распределены по источникам неравномерно. Например, в сырых metadata нет `Li`-примеров класса `arkhitektury`. Редкая модальность `Or` сохранена в профиле исходного датасета, но итоговый мультимодальный pipeline использует три основные модальности: `Li`, `Ae`, `SpOr`.
 
 ### Сравнение Li, Ae и SpOr
 
-![Региональное сравнение модальностей](assets/dataset/modality_comparison.png)
+![Региональное сравнение модальностей](../../../03_multiclass_segmentation_deeplab/assets/dataset/modality_comparison.png)
 
 Коллаж показывает один регион и один основной класс, представленные одновременно в `Li`, `Ae` и `SpOr`. Это региональные примеры, а не гарантированно выровненные по пикселям crops.
 
@@ -139,7 +139,7 @@ segmentation_dataset/
 
 Li-only validation-подмножество не содержит объектов `arkhitektury`, поэтому результаты этой серии нельзя использовать как итоговый benchmark. Их задача — помочь выбрать разумное направление дальнейшего исследования.
 
-![Diagnostic confusion matrix ResNet34 на сырых данных и всех модальностях](assets/plots/raw_ablation_resnet34_all_confusion_matrix.png)
+![Diagnostic confusion matrix ResNet34 на сырых данных и всех модальностях](../../../03_multiclass_segmentation_deeplab/assets/plots/raw_ablation_resnet34_all_confusion_matrix.png)
 
 Эта confusion matrix относится к diagnostic run на раннем ablation split. Она помогает понять поведение модели, но не является результатом final Stage C pipeline.
 
@@ -254,7 +254,7 @@ splits/archaeology_5class_research_split_v1/
 | Research Split | 0.7310 |
 | Postprocessing sweep | **0.7457** |
 
-Полная таблица из `18` строк с диагностическими моделями, benchmark-запусками и postprocessing pipeline-вариантами вынесена в [`reports/research_summary.md`](reports/research_summary.md).
+Полная таблица из `18` строк с диагностическими моделями, benchmark-запусками и postprocessing pipeline-вариантами вынесена в [`reports/research_summary.md`](../../../03_multiclass_segmentation_deeplab/reports/research_summary.md).
 
 ## Этап 5. Отбор checkpoints
 
@@ -310,7 +310,7 @@ Postprocessing sweep проверяет, насколько можно повы�
 | `resnet34_all_seed_77` | 0.6725 | 0.6949 | +0.0224 | 0.3 | 8 | True |
 | `resnet34_all_seed_101` | 0.6700 | **0.7457** | **+0.0757** | 0.3 | 8 | True |
 
-![Postprocessing sweep для итоговой модели](assets/plots/postprocess_sweep_resnet34_all_seed_101.png)
+![Postprocessing sweep для итоговой модели](../../../03_multiclass_segmentation_deeplab/assets/plots/postprocess_sweep_resnet34_all_seed_101.png)
 
 ### Вывод этапа
 
@@ -322,7 +322,7 @@ Postprocessing sweep проверяет, насколько можно повы�
 
 Для каждого patch сохранены одинаковый crop, одна и та же цветовая схема классов, GT mask, предсказания всех моделей и overlay финального результата. Рядом с названием patch указаны IoU и object F1 именно для Final Stage C.
 
-![Model evolution on the same validation samples](assets/readme/model_evolution_examples.png)
+![Model evolution on the same validation samples](../../../03_multiclass_segmentation_deeplab/assets/readme/model_evolution_examples.png)
 
 На этих примерах видно, что ранние diagnostic models часто дают шумные или смешанные маски даже на хорошо читаемых объектах.
 
@@ -418,13 +418,13 @@ Final validation performance:
 
 Ниже показаны пять лучших validation patches для финального pipeline. Ранжирование выполнено по patch-level `object_f1` и `weighted score`.
 
-![Representative predictions](assets/predictions/final_resnet34_all_seed_101.png)
+![Representative predictions](../../../03_multiclass_segmentation_deeplab/assets/predictions/final_resnet34_all_seed_101.png)
 
 ## Representative failure cases
 
 Ниже показаны пять худших validation patches для финального pipeline. Ранжирование выполнено по patch-level `object_f1` и `weighted score`.
 
-![Representative failure cases](reports/figures/failure_cases.png)
+![Representative failure cases](../../../03_multiclass_segmentation_deeplab/reports/figures/failure_cases.png)
 
 ## Failure analysis
 

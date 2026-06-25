@@ -34,10 +34,10 @@ Computer vision pipeline for converting archaeological geodata into segmentation
     shapely
 
 <p align="center">
-    <img src="assets/overlay_assets/img4.png" width="700">
-    <img src="assets/overlay_assets/img2.png" width="700">
-    <img src="assets/overlay_assets/img7.png" width="700">
-    <img src="assets/overlay_assets/img5.png" width="700">
+    <img src="../../../01_geodata_to_cv/assets/overlay_assets/img4.png" width="700">
+    <img src="../../../01_geodata_to_cv/assets/overlay_assets/img2.png" width="700">
+    <img src="../../../01_geodata_to_cv/assets/overlay_assets/img7.png" width="700">
+    <img src="../../../01_geodata_to_cv/assets/overlay_assets/img5.png" width="700">
 </p>
 
 Некоторые регионы содержали несовпадающие CRS между raster и GeoJSON данными, поэтому был реализован fallback reprojection pipeline.
@@ -51,7 +51,7 @@ Computer vision pipeline for converting archaeological geodata into segmentation
 Сначала использовался простой crop вокруг объекта с фиксированным контекстом.
 
 <p align="center">
-    <img src="assets/patch.png" width="700">
+    <img src="../../../01_geodata_to_cv/assets/patch.png" width="700">
 </p>
 
 ### Adaptive crop extraction
@@ -66,12 +66,12 @@ Computer vision pipeline for converting archaeological geodata into segmentation
     crop_size = max(object_size * context_scale, min_crop_size)
 ```
 <p align="center">
-    <img src="assets/mask_assets/mask3.png" width="700">
-    <img src="assets/mask_assets/mask1.png" width="700">
-    <img src="assets/mask_assets/mask2.png" width="700">
-    <img src="assets/mask_assets/mask4.png" width="700">
-    <img src="assets/mask_assets/mask5.png" width="700">
-    <img src="assets/mask_assets/mask6.png" width="700">
+    <img src="../../../01_geodata_to_cv/assets/mask_assets/mask3.png" width="700">
+    <img src="../../../01_geodata_to_cv/assets/mask_assets/mask1.png" width="700">
+    <img src="../../../01_geodata_to_cv/assets/mask_assets/mask2.png" width="700">
+    <img src="../../../01_geodata_to_cv/assets/mask_assets/mask4.png" width="700">
+    <img src="../../../01_geodata_to_cv/assets/mask_assets/mask5.png" width="700">
+    <img src="../../../01_geodata_to_cv/assets/mask_assets/mask6.png" width="700">
 </p>
 
 Это позволило:
@@ -86,10 +86,10 @@ Computer vision pipeline for converting archaeological geodata into segmentation
 После segmentation preprocessing pipeline был собран detection pipeline для YOLO.
 
 <p align="center">
-    <img src="assets/bbox_assets/bbox1.png" width="500">
-    <img src="assets/bbox_assets/bbox2.png" width="500">
-    <img src="assets/bbox_assets/bbox3.png" width="500">
-    <img src="assets/bbox_assets/bbox4.png" width="500">
+    <img src="../../../01_geodata_to_cv/assets/bbox_assets/bbox1.png" width="500">
+    <img src="../../../01_geodata_to_cv/assets/bbox_assets/bbox2.png" width="500">
+    <img src="../../../01_geodata_to_cv/assets/bbox_assets/bbox3.png" width="500">
+    <img src="../../../01_geodata_to_cv/assets/bbox_assets/bbox4.png" width="500">
 </p>
 
 Одна из сложностей:
