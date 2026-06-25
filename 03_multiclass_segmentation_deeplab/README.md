@@ -54,20 +54,7 @@ Pixel IoU полезен для диагностики границ, но не �
 | `arkhitektury` | 11.1 |
 | `fortifikatsii` | 5.6 |
 
-## Логика исследования
 
-```mermaid
-flowchart LR
-    A["Dataset profiling"] --> B["Encoder comparison"]
-    B --> C["Research Split"]
-    C --> D["Seed study"]
-    D --> E["Research summary table"]
-    E --> F["Best checkpoints"]
-    F --> G["Postprocessing sweep"]
-    G --> H["Final pipeline"]
-```
-
-Следующий этап запускается только после ответа на вопрос предыдущего. Раннее сравнение энкодеров является диагностикой. Все основные выводы о финальной модели получены позднее на зафиксированном Research Split.
 
 ## Этап 1. Профилирование датасета
 

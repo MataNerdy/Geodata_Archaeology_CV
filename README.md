@@ -18,19 +18,19 @@ The pipeline covers:
 
 The project is organized as a progression from raw geodata to ML-ready datasets, then to segmentation models, detection experiments, and proposal-based archaeological review.
 
-![Model evolution examples](03_multiclass_segmentation_deeplab/assets/readme/model_evolution_examples.png)
+![YOLO proposal case study](04_detection_yolo/assets/readme/figure_case_study_000444.png)
 
 ## Pipeline
 
-```mermaid
-flowchart LR
-    A["GeoTIFF + GeoJSON"] --> B["CRS alignment and overlay validation"]
-    B --> C["CV dataset generation"]
-    C --> D["Binary segmentation baseline"]
-    D --> E["Multiclass object-level segmentation"]
-    E --> F["YOLO object detection"]
-    F --> G["Low-confidence proposals and manual audit"]
-```
+| Step | Research step | Output |
+|---|---|---|
+| 01 | GeoTIFF + GeoJSON preprocessing | aligned rasters and vector labels |
+| 02 | CRS alignment and overlay validation | verified geospatial overlays |
+| 03 | CV dataset generation | image patches, masks, YOLO labels |
+| 04 | Binary segmentation baseline | kurgan segmentation baseline |
+| 05 | Multiclass segmentation | object-level segmentation model |
+| 06 | YOLO object detection | detection baseline and error analysis |
+| 07 | Proposal generation | low-confidence candidates for manual audit |
 
 ## Modules
 

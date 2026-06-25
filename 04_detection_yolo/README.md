@@ -25,15 +25,7 @@ raw LiDAR -> ground truth -> standard detector -> low-confidence proposals -> ma
 
 В стандартном detector mode YOLO находит только часть размеченных объектов. При снижении confidence threshold появляются дополнительные археологически правдоподобные кандидаты. По результатам ручной проверки часть формальных false positives не является очевидным мусором. Поэтому модель лучше рассматривать как proposal generator для экспертного review, а не как автономный final detector.
 
-Источники панелей figure:
 
-| Panel | Source |
-|---|---|
-| A. Raw LiDAR | `datasets/dataset_yolo_bbox_v3i_li_archaeological_object_merged/images/val/000444.png` |
-| B. Ground truth | `datasets/dataset_yolo_bbox_v3i_li_archaeological_object_merged/labels/val/000444.txt` |
-| C. Standard detector | `runs/yolo_v3i_archaeological_object_20260618_221705/analysis/v3i_archaeological_object_yolov8n_640/predictions_all_conf.csv` |
-| D. Low-confidence proposals | `reports/proposals/v3i_conf005/predictions.csv` |
-| E. Manual review | `reports/refinement_manual_review.csv` and `reports/proposals/v3i_conf005/crops/000444_p*.jpg` |
 
 ## Problem
 
